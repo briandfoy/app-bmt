@@ -1,0 +1,611 @@
+#!/Users/brian/bin/perl
+use v5.32;
+use experimental qw(signatures);
+use Mojo::Util qw(dumper);
+use File::Spec::Functions;
+use Term::ANSIColor;
+
+=head1 NAME
+
+bmt - brian's module tool
+
+=head1 SYNOPSIS
+
+	% bmt COMMAND
+
+=head1 DESCRIPTION
+
+I use this to manage my work in Perl modules. It's very particular to
+how I do things.
+
+First, my F<Makefile.PL>'s are modulinos. They construct their argument
+lists to C<WriteMakefile> but don't actually do anything unless it's
+call as a program. Load it like a module and I can get that argument list
+without the program doing its work. I can then inspect that data structure.
+
+Second, the modulino uses the package name of the main module and return
+that package name. As such, when I C<require './Makefile'>, I get back
+a package name. I can use that to call methods in the modulino.
+
+
+=cut
+
+my %Commands = (
+	actions    => [ sub { _browser( github('actions') ) },   "open the actions Github page"                     ],
+	appveyor   => [ sub { _browser( appveyor() )  },         "open the Appveyor page"                           ],
+	bitbucket  => [ sub { _browser( bitbucket() ) },         "open the main Bitbucket page"                     ],
+	cpanv      => [ \&cpan_info,                             "show the lastest CPAN version"                    ],
+	create_bb  => [ sub { create_bitbucket() },              "create a BitBucket repo"                          ],
+	create_gh  => [ sub { create_github() },                 "create a GitHub repo"                             ],
+	create_gl  => [ sub { create_gitlab() },                 "create a GitLab repo"                             ],
+	gh_name    => [ \&gh_name,                               "show the full_name of the Github repo"            ],
+	git_config => [ \&git_config,                            "configure the all remote"                         ],
+	github     => [ sub { _browser( github() ) },            "open the main Github page"                        ],
+	gitlab     => [ sub { _browser( gitlab() ) },            "open the main Gitlab page"                        ],
+	help       => [ \&show_help,                             "show the help message"                            ],
+	issues     => [ sub { _browser( github( 'issues' )  ) }, "open the Github issues page"                      ],
+	module     => [ sub { say _module() },                   "show the main module name"                        ],
+	open_all   => [ \&open_all,                              "open Github, Gitlab, and Bitbucket in one go"     ],
+	perlv      => [ \&show_perl_version,                     "show the declared Perl versions in various files" ],
+	releases   => [ \&release_history,                       "show the recent release history"                  ],
+	test       => [ \&test,                                  "run the tests"                                    ],
+	update     => [ \&update,                                "update the modules this tool needs"               ],
+	workflows  => [ \&show_workflows,                        "show the last set of workflows"                   ],
+
+	'default'  => [ \&show_help,                             "the default target (probably help)"               ],
+	dump       => [ sub { say dumper( _metacpan()->module( _module() ) ) }, "dump the MetaCPAN info" ],
+	);
+
+@ARGV = qw(default) unless @ARGV;
+
+foreach my $command ( @ARGV ) {
+	if( exists $Commands{$command} ) {
+		$Commands{$command}->[0]();
+		}
+	else {
+		say STDERR "Command <$command> wasn't found";
+		}
+	}
+
+sub open_all () {
+	_browser($_) for ( gitlab(), bitbucket(), github(), appveyor() );
+	}
+
+sub appveyor () {
+	sprintf "https://ci.appveyor.com/project/%s/%s", _github_owner_repo();
+	}
+
+sub bitbucket () {
+	my $url = _fetch_url( 'bitbucket' );
+	# git@bitbucket.org:briandfoy/mac-propertylist.git
+	$url =~ s|git\@bitbucket.org:|https://www.bitbucket.org/|;
+	$url;
+	}
+
+sub cpan_info () {
+	my $module = _metacpan()->module( _module() );
+
+	my $date    = $module->{data}{date};
+	my $version = $module->{data}{version};
+
+	say "CPAN: @{[_module()]} $version ---> $date";
+	}
+
+sub create_bitbucket () {
+	my $ua = _ua();
+
+	my( $owner, $repo_name ) = _github_owner_repo();
+
+	my $user = _bitbucket_user();
+	my $url = sprintf 'https://%s:%s@api.bitbucket.org/2.0/repositories/%s/%s',
+		$user, _bitbucket_app_password(),
+		$user, $repo_name;
+
+	my $default_bitbucket_project = 'PROJ';
+
+	my $tx = $ua->post(
+		$url,
+		{ 'Content-type' => 'application/json' },
+		json => { project => { key => $default_bitbucket_project } }
+		);
+
+	say do {
+		if( $tx->result->is_success ) { "Created Bitbucket repo <$user/$repo_name>" }
+		else { "Could not create Bitbucket repo\n" . $tx->res->to_string }
+		};
+	}
+
+sub create_github () {
+	say "Creating Gitlab not yet a feature"
+	}
+
+sub create_gitlab () {
+# https://docs.gitlab.com/ee/api/projects.html#create-project-for-user
+	my $ua = _ua();
+
+	my( $owner, $repo_name ) = _github_owner_repo();
+
+	my $token = $ENV{BMT_GITLAB_TOKEN};
+	my $tx = $ua->post(
+		'https://gitlab.com/api/v4/projects',
+		{
+			'Content-type'  => 'application/json',
+			'Authorization' => "Bearer $token",
+		},
+		json => { name => $repo_name, visibility => 'public' }
+		);
+
+	say do {
+		if( $tx->result->is_success ) { "Created Gitlab repo <$repo_name>" }
+		else { "Could not create Gitlab repo\n" . $tx->res->to_string }
+		};
+	}
+
+sub create_repos () {
+	&create_github;
+	&create_bitbucket;
+	&create_gitlab;
+	}
+
+sub gh_name () {
+	say join '/', _github_owner_repo();
+	}
+
+=item * git_config
+
+I like to have my repos stored on multiple services so I can tolerate
+the failure of a couple of them. So far I use Github as the primary
+and Bitbucket and Gitlab as the backups.
+
+There's a curious thing you can do with a remote: it can take multiple
+push urls. Use Github as the fetch URL, but push to all the services
+through one remote. Since I don't mess with Bitbucket or Gitlab, those
+should never be out of sync. And, it they are, I just delete the repo
+and start again with a fresh push.
+
+This bit of code took me awhile to simplify to the point where it
+could work. The goal is to collect all the URLs I need to push to.
+
+First, there has to be an origin. I'd like to fix that at some point,
+but that's how it is now. That's Github.
+
+Second, there might already be remotes for Bitbucket and Gitlab. If
+there are, grab their URLs. If there aren't, make them. The trick is
+to guess what the URLs should be since I have several owners on Github
+(counting organizations) but only single personal accounts on the
+other services.
+
+Then, if there isn't a remote named 'all', make that with Github
+address. Grab all those URLs from the other remotes and add those as
+pushurls if all doesn't already have them.
+
+=cut
+
+sub git_config () {
+	my $origin_url = _fetch_url( 'origin' );
+	unless( $origin_url ) {
+		say "No URL for origin. Aborting...";
+		return;
+		}
+
+	my %hosts = (
+		bitbucket => 'git@bitbucket.org',
+		gitlab    => 'git@gitlab.com',
+		);
+
+	my %remotes = ( 'origin', $origin_url );
+	my @remotes = qw( bitbucket gitlab );
+	foreach my $remote ( @remotes ) {
+		$remotes{$remote} = do {
+			if( _remote_exists( $remote ) ) { _git_capture( "git config remote.$remote.url" ) }
+			else {
+				no strict 'refs';
+				my $user = &{"_${remote}_user"}();
+				my $url = $origin_url =~ s|git\@github.com:(?:\S+?)/(\S+?)\.git$|$hosts{$remote}:$user/$1.git|r;
+				if( _repo_exists( $url ) ) { _git_run( 'git', 'remote', 'add', $remote, $url ); $url }
+				else                       { say "Remote URL <$url> is not a repo"; ()         }
+				}
+			};
+		}
+
+	unless( _remote_exists( 'all' ) ) {
+		_git_run( 'git', 'remote', 'add', 'all', $origin_url ),
+		}
+
+	# these already exist, so don't re-add them
+	my %push_urls =
+		map { chomp; $_ => 1 }
+		_git_capture( "git config --get-all remote.all.pushurl" );
+
+	foreach my $url ( grep { defined } values %remotes ) {
+		next if exists $push_urls{$url};
+		_git_set_push_url( 'all', $url );
+		}
+
+	_git_run( 'git', 'push', '-u', 'all', 'master' );
+	}
+
+sub github ( $path = '' ) {
+	_settings()->{META_MERGE}{resources}{repository}{web} . "/$path";
+	}
+
+sub gitlab () {
+	my $url = _fetch_url( 'gitlab' );
+	# git@gitlab.com:briandfoy/mac-propertylist.git
+	$url =~ s|git\@gitlab.com:|https://www.gitlab.com/|;
+	$url;
+	}
+
+sub make ( @targets ) {
+	`$^X Makefile.PL 2>&1`;
+	`make @targets`;
+	}
+
+sub release_history {
+	cpan_info();
+
+	open my $fh, '<:utf8', 'Changes' or die "Could not open Changes!: $!\n";
+	while( <$fh> ) {
+		state $count = 0;
+		next unless m/\A\S/;
+		last if $count++ > 4;
+		print;
+		}
+	}
+
+sub show_help {
+	my( $longest ) = sort { length $b <=> length $a } keys %Commands;
+	my $length = length $longest;
+
+	say join "\n", map {
+		sprintf "%-${length}s     %s", $_, $Commands{$_}->[1]
+		} sort keys %Commands;
+	}
+
+sub show_perl_version {
+	state $rc = require Module::Extract::DeclaredMinimumPerl;
+
+	my $minv = _settings()->{MIN_PERL_VERSION};
+
+	make();
+
+	chomp( my @files = `find blib -name '*.pm'` );
+
+	my %files;
+	my $extor = Module::Extract::DeclaredMinimumPerl->new;
+	foreach my $file ( @files ) {
+		$files{$file} = $extor->get_minimum_declared_perl( $file )
+		}
+
+	my $f_string = join "\n\t", map { "$files{$_} => $_" } sort keys %files;
+
+	say <<~"HERE";
+	Min version: $minv
+	Files:\n\t$f_string
+	HERE
+	}
+
+sub show_workflows {
+	state %colors = (
+		completed   => 'green',
+		queued      => 'cyan',
+		in_progress => 'yellow',
+		success     => 'green',
+		failure     => 'red',
+		default     => 'cyan',
+		);
+
+	my $result = _ghojo()->list_workflow_runs( _github_owner_repo() );
+	if( $result->is_error ) {
+		say "Error fetching workflows";
+		say $result->long_summary;
+		return;
+		}
+
+	foreach my $item ( $result->values->to_array->@* ) {
+		state $id = do {
+			my $id = $item->head_commit->id;
+			say "HEAD is $id";
+			say "Message: " . $item->head_commit->message;
+			$id;
+			};
+		last unless $id eq $item->head_commit->id;
+		my( $name, $status, $conclusion ) =
+			map( { $item->{$_} // '' } qw(name status conclusion) );
+
+		my $ex = $status eq 'completed' ? $conclusion : $status;
+
+		$ex = colored( [$colors{$ex || 'default'}], $ex );
+
+		printf "%-12s %-12s\n", $name, $ex;
+		}
+	}
+
+sub test {
+	`$^X Makefile.PL 2>&1`;
+	system 'make', 'test';
+	}
+
+sub update {
+	my @modules = do {
+		my @found;
+		open my $fh, '<:utf8', __FILE__
+			or die "Could not open " . __FILE__ . ": $!\n";
+		while( <$fh> ) {
+			next unless m/
+				(?-x:require) \s+
+				(?<module>
+					[A-Z][A-Z0-9_]*
+					(?: \:\:[A-Z][A-Z0-9_]* )*
+				)
+				/ix;
+			push @found, $+{module};
+			}
+		@found;
+		};
+	say "Modules are <@modules>";
+	system $^X, '/Users/brian/bin/cpan', @modules;
+	}
+
+
+=head2 Mostly internal functions
+
+=over 4
+
+=item * _bitbucket_user
+
+Return the Bitbucket account name
+
+=cut
+
+sub _bitbucket_user { 'briandfoy' }
+
+=item * _bitbucket_app_password
+
+Return the Bitbucket app password
+
+=cut
+
+sub _bitbucket_app_password { $ENV{BMT_BITBUCKET_APP_PASSWORD} }
+
+=item * _browser( URL )
+
+Open the URL in your browser
+
+=cut
+
+sub _browser ( $url ) {
+	no strict 'refs';
+	my $handler = "_open_$^O";
+	die "No open handler for $^O" unless defined &{$handler};
+	&{$handler};
+	}
+
+=item * _fetch_url( REMOTE_NAME )
+
+Get the fetch URL for the Git remote
+
+=cut
+
+sub _fetch_url ( $remote_name ) {
+	my $command = "git config remote.${remote_name}.url";
+	chomp( my $git_url = _git_capture( $command ) );
+	warn "No $remote_name remote!\n" unless $git_url;
+	$git_url;
+	}
+
+=item * _git_set_push_url( REMOTE, URL )
+
+Add the URL to REMOTE. This command has many pieces!
+
+=cut
+
+sub _git_set_push_url ( $remote, $url ) {
+	_git_run( 'git', 'remote', 'set-url', '--add', '--push', $remote, $url );
+	}
+
+=item * _ghojo
+
+Return a L<Ghojo> object
+
+=cut
+
+sub _ghojo () {
+	state $rc = require Ghojo;
+	state $default_file = catfile( $ENV{HOME}, '.github', 'bmt.token' );
+	state $ghojo = do {
+		my %args = do {
+			if( defined $ENV{BMT_GITHUB_TOKEN} ) {
+				( token => $ENV{BMT_GITHUB_TOKEN} );
+				}
+			elsif( defined $ENV{BMT_GITHUB_TOKEN_FILE} and -e $ENV{BMT_GITHUB_TOKEN_FILE} ) {
+				( token_file => $ENV{BMT_GITHUB_TOKEN_FILE} )
+				}
+			elsif( -e $default_file ) {
+				( token_file => $default_file )
+				}
+			};
+		my $ghojo = Ghojo->new( \%args );
+
+		if( $ghojo->is_error ) {
+			say $ghojo->long_summary;
+			exit(10);
+			}
+
+		$ghojo;
+		};
+
+	$ghojo;
+	}
+
+=item * _git_capture
+
+=item * _git_run
+
+=cut
+
+sub _git_capture ( $command ) {
+	die "This is not a git repo!\n" unless -e '.git';
+	chomp( my $v = `$command` );
+	$v;
+	}
+
+=item * _github_owner_repo
+
+Return the owner and repo name for this Github clone.
+
+=cut
+
+sub _github_owner_repo () {
+	my $url = _fetch_url( 'all' );
+	die "No URL! Stopping!\n" unless $url;
+	my( $owner, $repo ) = $url =~ m|git\@github.com:(\S+?)/(\S+?)\.git|;
+	}
+
+sub _git_run ( @command ) {
+	die "This is not a git repo!\n" unless -e '.git';
+	system { $command[0] } @command;
+	}
+
+=item * _gitlab_user
+
+Return the Gitlab account name
+
+=cut
+
+sub _gitlab_user { 'briandfoy' }
+
+=item * _metacpan
+
+Get a L<MetaCPAN::Client> object
+
+=cut
+
+sub _metacpan () {
+	state $rc = require MetaCPAN::Client;
+	state $mcpan = MetaCPAN::Client->new;
+	$mcpan;
+	}
+
+=item *
+
+Return the name of the main module
+
+=cut
+
+sub _module () {
+	_settings()->{NAME}
+	}
+
+=item * _open_darwin
+
+Open a URL in Safari
+
+=cut
+
+sub _open_darwin ( $url ) { system 'open', '-a', 'Safari', $url }
+
+=item * _remote_exists( REMOTE )
+
+Returns true if there's a remote with name REMOTE
+
+	_remote_exists( 'origin' );
+
+=cut
+
+sub _remote_exists ( $remote ) {
+	chomp( my @remotes = split /\R/, _git_capture( "git remote" ) );
+	scalar grep { $_ eq $remote } @remotes;
+	}
+
+=item * _repo_exists( URL )
+
+Returns true if the git URL is actually a repo.
+
+	_repo_exists( 'git@github.com:briandfoy/ghojo.git' );
+
+=cut
+
+sub _repo_exists ( $url ) {
+	my $output = _git_capture( "git ls-remote $url 2>&1" );
+	$output =~ m/\A[a-h0-9]{40}\s+HEAD\R/;
+	}
+
+=item * _settings
+
+Get the C<WriteMakefileArgs> from F<Makefile.PL>
+
+=cut
+
+sub _settings {
+	state $package = eval { require "./Makefile.PL" };
+	die "Could not load Makefile.PL: $@\n" unless $package;
+	die "Makefile.PL doesn't seem to have retuned a package name!\n"
+		if $package =~ m/\A[A-Z][A-Z0-9_]+(?:\:\:[A-Z][A-Z0-9_]+)*\z/;
+	state $settings = $package->arguments;
+	$settings;
+	}
+
+=item * _ua
+
+Returns a Mojo::UserAgent object
+
+=cut
+
+sub _ua {
+	state $rc = require Mojo::UserAgent;
+	state $ua = Mojo::UserAgent->new;
+	$ua
+	}
+
+=back
+
+=cut
+
+__END__
+my %WriteMakefile = (
+	'MIN_PERL_VERSION' => '5.008',
+
+	'NAME'          => $module,
+	'ABSTRACT_FROM' => $main_file,
+	'VERSION_FROM'  => $main_file,
+	'AUTHOR'        => 'brian d foy <bdfoy@cpan.org>',
+	'LICENSE'       => 'artistic_2',
+
+	'CONFIGURE_REQUIRES' => {
+		'ExtUtils::MakeMaker'   => '6.64',
+		'File::Spec::Functions' => '0',
+		},
+
+	'BUILD_REQUIRES' => {
+		},
+
+	'TEST_REQUIRES' => {
+		'Test::Data' => '0',
+		'Test::More' => '1',
+		},
+
+	'PREREQ_PM'     => {
+		},
+
+	'PL_FILES'      => {
+		'preprocess/Object/Iterate.pm.PL' => 'blib/lib/Object/Iterate.pm',
+		},
+
+	'META_MERGE' => {
+		'meta-spec' => { version => 2 },
+		resources => {
+			repository => {
+				type => 'git',
+				url  => "$github.git",
+				web  => $github,
+				},
+			bugtracker => {
+				web    => "$github/issues",
+				},
+			homepage => $github,
+			},
+		},
+
+	clean => { FILES => "$dist-*" },
+	);
