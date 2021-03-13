@@ -5,7 +5,6 @@ use experimental qw(signatures);
 use Antsy qw(:all);
 use File::Spec::Functions;
 use Mojo::Util qw(dumper trim);
-use Term::ANSIColor;
 
 =head1 NAME
 
