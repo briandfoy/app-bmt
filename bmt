@@ -1,8 +1,10 @@
 #!/Users/brian/bin/perl
 use v5.32;
 use experimental qw(signatures);
-use Mojo::Util qw(dumper);
+
+use Antsy qw(:all);
 use File::Spec::Functions;
+use Mojo::Util qw(dumper trim);
 use Term::ANSIColor;
 
 =head1 NAME
@@ -27,33 +29,33 @@ Second, the modulino uses the package name of the main module and return
 that package name. As such, when I C<require './Makefile'>, I get back
 a package name. I can use that to call methods in the modulino.
 
-
 =cut
 
 my %Commands = (
-	actions    => [ sub { _browser( github('actions') ) },   "open the actions Github page"                     ],
-	appveyor   => [ sub { _browser( appveyor() )  },         "open the Appveyor page"                           ],
-	bitbucket  => [ sub { _browser( bitbucket() ) },         "open the main Bitbucket page"                     ],
-	cpanv      => [ \&cpan_info,                             "show the lastest CPAN version"                    ],
-	create_bb  => [ sub { create_bitbucket() },              "create a BitBucket repo"                          ],
-	create_gh  => [ sub { create_github() },                 "create a GitHub repo"                             ],
-	create_gl  => [ sub { create_gitlab() },                 "create a GitLab repo"                             ],
-	gh_name    => [ \&gh_name,                               "show the full_name of the Github repo"            ],
-	git_config => [ \&git_config,                            "configure the all remote"                         ],
-	github     => [ sub { _browser( github() ) },            "open the main Github page"                        ],
-	gitlab     => [ sub { _browser( gitlab() ) },            "open the main Gitlab page"                        ],
-	help       => [ \&show_help,                             "show the help message"                            ],
-	issues     => [ sub { _browser( github( 'issues' )  ) }, "open the Github issues page"                      ],
-	module     => [ sub { say _module() },                   "show the main module name"                        ],
-	open_all   => [ \&open_all,                              "open Github, Gitlab, and Bitbucket in one go"     ],
-	perlv      => [ \&show_perl_version,                     "show the declared Perl versions in various files" ],
-	releases   => [ \&release_history,                       "show the recent release history"                  ],
-	test       => [ \&test,                                  "run the tests"                                    ],
-	update     => [ \&update,                                "update the modules this tool needs"               ],
-	workflows  => [ \&show_workflows,                        "show the last set of workflows"                   ],
+	actions     => [ sub { _browser( github('actions') ) },   "open the actions Github page"                     ],
+	appveyor    => [ sub { _browser( appveyor() )  },         "open the Appveyor page"                           ],
+	bitbucket   => [ sub { _browser( bitbucket() ) },         "open the main Bitbucket page"                     ],
+	cpantesters => [ \&cpan_testers,                          "show Testers result for the latest version"       ],
+	cpanv       => [ \&cpan_info,                             "show the lastest CPAN version"                    ],
+	create_bb   => [ sub { create_bitbucket() },              "create a BitBucket repo"                          ],
+	create_gh   => [ sub { create_github() },                 "create a GitHub repo"                             ],
+	create_gl   => [ sub { create_gitlab() },                 "create a GitLab repo"                             ],
+	gh_name     => [ \&gh_name,                               "show the full_name of the Github repo"            ],
+	git_config  => [ \&git_config,                            "configure the all remote"                         ],
+	github      => [ sub { _browser( github() ) },            "open the main Github page"                        ],
+	gitlab      => [ sub { _browser( gitlab() ) },            "open the main Gitlab page"                        ],
+	help        => [ \&show_help,                             "show the help message"                            ],
+	issues      => [ sub { _browser( github( 'issues' )  ) }, "open the Github issues page"                      ],
+	module      => [ sub { say _main_module() },              "show the main module name"                        ],
+	open_all    => [ \&open_all,                              "open Github, Gitlab, and Bitbucket in one go"     ],
+	perlv       => [ \&show_perl_version,                     "show the declared Perl versions in various files" ],
+	releases    => [ \&release_history,                       "show the recent release history"                  ],
+	test        => [ \&test,                                  "run the tests"                                    ],
+	update      => [ \&update,                                "update the modules this tool needs"               ],
+	workflows   => [ \&show_workflows,                        "show the last set of workflows"                   ],
 
-	'default'  => [ \&show_help,                             "the default target (probably help)"               ],
-	dump       => [ sub { say dumper( _metacpan()->module( _module() ) ) }, "dump the MetaCPAN info" ],
+	'default'   => [ \&show_help,                             "the default target (probably help)"               ],
+	dump        => [ sub { say dumper( _metacpan()->module( _main_module() ) ) }, "dump the MetaCPAN info"       ],
 	);
 
 @ARGV = qw(default) unless @ARGV;
@@ -83,13 +85,56 @@ sub bitbucket () {
 	}
 
 sub cpan_info () {
-	my $module = _metacpan()->module( _module() );
+	my $module = _metacpan()->module( _main_module() );
 
 	my $date    = $module->{data}{date};
 	my $version = $module->{data}{version};
 
-	say "CPAN: @{[_module()]} $version ---> $date";
+	say "CPAN: @{[_main_module()]} $version ---> $date";
 	}
+
+=begin ignore
+
+{
+"reporter":"\"Slaven Rezi&#x107;\" <srezic@cpan.org>",
+"grade":"pass",
+"osname":"linux",
+"perl":"5.30.2",
+"osvers":"5.4.0-33-generic",
+"date":"2021-02-26T16:21:00Z",
+"version":"2.127_04",
+"guid":"a9a736ec-784e-11eb-841d-be631f24ea8f",
+"dist":"Module-Release",
+"platform":"x86_64-linux"
+}
+
+=end ignore
+
+=cut
+
+sub classify ( $key, $data = [] ) {
+	my $results = {};
+	foreach my $item ( $data->@* ) {
+		$results->{ $item->{$key} }++;
+		}
+	$results;
+	}
+
+sub _cpan_testers ( $release = undef ) {
+	$release //= _latest_release_version();
+	my $dist_name = _dist_name();
+	my $url = sprintf 'http://api.cpantesters.org/v3/summary/%s/%s', $dist_name, $release;
+
+	my $data = _ua()->get( $url )->result->json;
+	return unless ref $data eq ref [];
+	my $results = classify( 'grade', $data );
+	sprintf '%s / %s / %s',
+		text_green() . (sprintf '%3s', $results->{pass} // '-') . reset(),
+		text_red()   . (sprintf '%3s', $results->{fail} // '-') . reset(),
+		text_cyan()  . (sprintf '%3s', $results->{na}   // '-') . reset();
+	}
+
+sub cpan_testers { say &_cpan_testers }
 
 sub create_bitbucket () {
 	my $ua = _ua();
@@ -243,13 +288,15 @@ sub make ( @targets ) {
 
 sub release_history {
 	cpan_info();
+	print "\n";
 
-	open my $fh, '<:utf8', 'Changes' or die "Could not open Changes!: $!\n";
-	while( <$fh> ) {
+	my $releases = _releases();
+
+	foreach my $release ( $releases->@* ) {
 		state $count = 0;
-		next unless m/\A\S/;
-		last if $count++ > 4;
-		print;
+		next unless ref $release;
+		last if $count++ > 10;
+		printf "%15s   %-10s  %s\n", _cpan_testers($release->[0]), $release->@*;
 		}
 	}
 
@@ -381,6 +428,17 @@ sub _browser ( $url ) {
 	&{$handler};
 	}
 
+=item * _dist_name
+
+Return the dist name, which is the main module name with dashes instead
+of doubled colons.  Module::Release is Module-Release. This is mostly
+true across CPAN, although very few things had other names (L<libwww-perl>
+for example).
+
+=cut
+
+sub _dist_name () { _main_module() =~ s/::/-/gr }
+
 =item * _fetch_url( REMOTE_NAME )
 
 Get the fetch URL for the Git remote
@@ -475,6 +533,14 @@ Return the Gitlab account name
 
 sub _gitlab_user { 'briandfoy' }
 
+=item * _latest_release_version
+
+Return the latest release version
+
+=cut
+
+sub _latest_release_version { _releases()->[0][0] }
+
 =item * _metacpan
 
 Get a L<MetaCPAN::Client> object
@@ -487,15 +553,13 @@ sub _metacpan () {
 	$mcpan;
 	}
 
-=item *
+=item * _main_module
 
 Return the name of the main module
 
 =cut
 
-sub _module () {
-	_settings()->{NAME}
-	}
+sub _main_module () { _settings()->{NAME} }
 
 =item * _open_darwin
 
@@ -504,6 +568,24 @@ Open a URL in Safari
 =cut
 
 sub _open_darwin ( $url ) { system 'open', '-a', 'Safari', $url }
+
+=item * _releases
+
+=cut
+
+sub _releases {
+	open my $fh, '<:utf8', 'Changes' or die "Could not open Changes!: $!\n";
+
+	my @releases;
+	while( <$fh> ) {
+		state $count = 0;
+		next unless m/\A\d/;
+		trim($_);
+		push @releases, [ split ];
+		}
+
+	\@releases;
+	}
 
 =item * _remote_exists( REMOTE )
 
