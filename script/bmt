@@ -1,9 +1,13 @@
 #!/Users/brian/bin/perl
 use v5.32;
+
+package App::bmt;
+
 use experimental qw(signatures);
 
 use Antsy qw(:all);
 use File::Spec::Functions;
+use Module::CoreList;
 use Mojo::Util qw(dumper trim);
 
 =head1 NAME
@@ -39,51 +43,58 @@ my %Commands = (
 	create_bb   => [ sub { create_bitbucket() },              "create a BitBucket repo"                          ],
 	create_gh   => [ sub { create_github() },                 "create a GitHub repo"                             ],
 	create_gl   => [ sub { create_gitlab() },                 "create a GitLab repo"                             ],
+	deps        => [ \&deps,                                  "show the dependency chain for this dist"          ],
 	gh_name     => [ \&gh_name,                               "show the full_name of the Github repo"            ],
 	git_config  => [ \&git_config,                            "configure the all remote"                         ],
 	github      => [ sub { _browser( github() ) },            "open the main Github page"                        ],
 	gitlab      => [ sub { _browser( gitlab() ) },            "open the main Gitlab page"                        ],
 	help        => [ \&show_help,                             "show the help message"                            ],
 	issues      => [ sub { _browser( github( 'issues' )  ) }, "open the Github issues page"                      ],
+	licenses    => [ \&license_check,                         "list the licenses involved in dependencies"       ],
 	module      => [ sub { say _main_module() },              "show the main module name"                        ],
 	open_all    => [ \&open_all,                              "open Github, Gitlab, and Bitbucket in one go"     ],
 	perlv       => [ \&show_perl_version,                     "show the declared Perl versions in various files" ],
 	releases    => [ \&release_history,                       "show the recent release history"                  ],
+	new         => [ \&new_module,                            "make a new module directory"                      ],
 	test        => [ \&test,                                  "run the tests"                                    ],
-	update      => [ \&update,                                "update the modules this tool needs"               ],
+	update      => [ \&update_bmt_prereqs,                    "update the modules this tool needs"               ],
 	workflows   => [ \&show_workflows,                        "show the last set of workflows"                   ],
 
 	'default'   => [ \&show_help,                             "the default target (probably help)"               ],
-	dump        => [ sub { say dumper( _metacpan()->module( _main_module() ) ) }, "dump the MetaCPAN info"       ],
+	dump_module => [ sub { say dumper( _metacpan()->module( _main_module() )->{data} ) }, "dump the MetaCPAN module info"       ],
+	dump_dist   => [ sub { say dumper( _metacpan()->release( _dist_name() )->{data} ) }, "dump the MetaCPAN dist info"       ],
 	);
 
-@ARGV = qw(default) unless @ARGV;
+run( @ARGV ) unless caller;
 
-foreach my $command ( @ARGV ) {
+sub run ( @args ) {
+	my( $command, @cmd_args ) = @args;
+	$command //= 'default';
+
 	if( exists $Commands{$command} ) {
-		$Commands{$command}->[0]();
+		$Commands{$command}->[0]( @cmd_args );
 		}
 	else {
-		say STDERR "Command <$command> wasn't found";
+		say STDERR "Command <$command> wasn't found. See `$^O help`";
 		}
 	}
 
-sub open_all () {
+sub open_all ( @args ) {
 	_browser($_) for ( gitlab(), bitbucket(), github(), appveyor() );
 	}
 
-sub appveyor () {
+sub appveyor ( @args ) {
 	sprintf "https://ci.appveyor.com/project/%s/%s", _github_owner_repo();
 	}
 
-sub bitbucket () {
+sub bitbucket ( @args ) {
 	my $url = _fetch_url( 'bitbucket' );
 	# git@bitbucket.org:briandfoy/mac-propertylist.git
 	$url =~ s|git\@bitbucket.org:|https://www.bitbucket.org/|;
 	$url;
 	}
 
-sub cpan_info () {
+sub cpan_info ( @args ) {
 	my $module = _metacpan()->module( _main_module() );
 
 	my $date    = $module->{data}{date};
@@ -133,9 +144,9 @@ sub _cpan_testers ( $release = undef ) {
 		text_cyan()  . (sprintf '%3s', $results->{na}   // '-') . reset();
 	}
 
-sub cpan_testers { say &_cpan_testers }
+sub cpan_testers ( @args ) { say &_cpan_testers }
 
-sub create_bitbucket () {
+sub create_bitbucket ( @args ) {
 	my $ua = _ua();
 
 	my( $owner, $repo_name ) = _github_owner_repo();
@@ -159,11 +170,11 @@ sub create_bitbucket () {
 		};
 	}
 
-sub create_github () {
-	say "Creating Gitlab not yet a feature"
+sub create_github ( @args ) {
+	say "Creating Github not yet a feature"
 	}
 
-sub create_gitlab () {
+sub create_gitlab ( @args ) {
 # https://docs.gitlab.com/ee/api/projects.html#create-project-for-user
 	my $ua = _ua();
 
@@ -185,13 +196,64 @@ sub create_gitlab () {
 		};
 	}
 
-sub create_repos () {
+sub create_repos ( @args ) {
 	&create_github;
 	&create_bitbucket;
 	&create_gitlab;
 	}
 
-sub gh_name () {
+=begin ignore
+
+    {
+      "module" => "ExtUtils::MakeMaker",
+      "phase" => "configure",
+      "relationship" => "requires",
+      "version" => "6.64"
+    }
+
+=end ignore
+
+=cut
+
+sub _module_to_dist ( $module ) {
+	state $mcpan = _metacpan();
+	state $cache = {};
+	return $cache->{$module} if exists $cache->{$module};
+	$cache->{$module} = eval { $mcpan->module( $module )->{data}{distribution} };
+	}
+
+sub deps {
+	my @queue = ( [ 0, _dist_name()] );
+	my $mcpan = _metacpan();
+
+	my $Seen = {};
+
+	while( my $next = shift @queue ) {
+		my $suffix = exists $Seen->{ $next->[1] } ?  ' <already seen>' : '';
+		say "\t" x $next->[0], $next->[1], $suffix;
+		next if $suffix;
+		$Seen->{ $next->[1] }++;
+
+		unshift @queue,
+			map  { [ $next->[0] + 1, $_ ] }
+			grep { defined }
+			map  { _module_to_dist( $_ ) }
+			grep { ! Module::CoreList::is_core( $_ ) and $_ ne 'perl' }
+			sort
+			map  { $_->{module} }
+			grep { $_->{relationship} eq 'requires' }
+			grep { $_->{phase} eq 'runtime' }
+			map  { $_->@* }
+			eval { $mcpan->release( $next->[1] )->{data}{dependency} } // [];
+		}
+
+	say "Dependency count: " . keys $Seen->%*;
+	my $string = join " ", sort keys $Seen->%*;
+	$string =~ s/.{50,70}\K\s/\n/g;
+	say $string;
+	}
+
+sub gh_name ( @args ) {
 	say join '/', _github_owner_repo();
 	}
 
@@ -225,7 +287,7 @@ pushurls if all doesn't already have them.
 
 =cut
 
-sub git_config () {
+sub git_config ( @args ) {
 	my $origin_url = _fetch_url( 'origin' );
 	unless( $origin_url ) {
 		say "No URL for origin. Aborting...";
@@ -269,15 +331,52 @@ sub git_config () {
 	_git_run( 'git', 'push', '-u', 'all', 'master' );
 	}
 
-sub github ( $path = '' ) {
+sub github ( $path = '',  @args ) {
 	_settings()->{META_MERGE}{resources}{repository}{web} . "/$path";
 	}
 
-sub gitlab () {
+sub gitlab ( @args ) {
 	my $url = _fetch_url( 'gitlab' );
 	# git@gitlab.com:briandfoy/mac-propertylist.git
 	$url =~ s|git\@gitlab.com:|https://www.gitlab.com/|;
 	$url;
+	}
+
+sub _license_for ( $dist ) {
+	state $Seen;
+	return $Seen->{$dist} if exists $Seen->{$dist};
+	$Seen->{$dist} = join ', ', _metacpan()->release($dist)->{data}{license}->@*;
+	}
+
+sub license_check {
+	my @queue = ( [ 0, _dist_name()] );
+	my $mcpan = _metacpan();
+
+	my $Seen = {};
+	my $Licenses = {};
+
+	while( my $next = shift @queue ) {
+		my $licenses = _license_for($next->[1]);
+		say "\t" x $next->[0], $next->[1], ' ', $licenses;
+		$Licenses->{$_}++ for split /\s*,\s*/, $licenses;
+
+		next if $Seen->{ $next->[1] }++;
+
+		unshift @queue,
+			map  { [ $next->[0] + 1, $_ ] }
+			grep { defined }
+			map  { _module_to_dist( $_ ) }
+			grep { ! Module::CoreList::is_core( $_ ) and $_ ne 'perl' }
+			sort
+			map  { $_->{module} }
+			grep { $_->{relationship} eq 'requires' }
+			grep { $_->{phase} eq 'runtime' }
+			map  { $_->@* }
+			eval { $mcpan->release( $next->[1] )->{data}{dependency} } // [];
+		}
+
+	say "License count: " . keys $Licenses->%*;
+	say "Licenses: ", join " ", sort keys $Licenses->%*;
 	}
 
 sub make ( @targets ) {
@@ -285,7 +384,13 @@ sub make ( @targets ) {
 	`make @targets`;
 	}
 
-sub release_history {
+sub new_module ( @args ) {
+	state $rc = require Distribution::Cooker;
+	my( $module_name, @new_args ) = @args;
+	system( 'dist_cooker', $module_name );
+	}
+
+sub release_history ( @args ) {
 	cpan_info();
 	print "\n";
 
@@ -299,7 +404,7 @@ sub release_history {
 		}
 	}
 
-sub show_help {
+sub show_help ( @args ) {
 	my( $longest ) = sort { length $b <=> length $a } keys %Commands;
 	my $length = length $longest;
 
@@ -308,7 +413,7 @@ sub show_help {
 		} sort keys %Commands;
 	}
 
-sub show_perl_version {
+sub show_perl_version ( @args ) {
 	state $rc = require Module::Extract::DeclaredMinimumPerl;
 
 	my $minv = _settings()->{MIN_PERL_VERSION};
@@ -331,7 +436,7 @@ sub show_perl_version {
 	HERE
 	}
 
-sub show_workflows {
+sub show_workflows ( @args ) {
 	state %colors = (
 		completed   => 'green',
 		queued      => 'cyan',
@@ -367,12 +472,12 @@ sub show_workflows {
 		}
 	}
 
-sub test {
+sub test ( @args ) {
 	`$^X Makefile.PL 2>&1`;
 	system 'make', 'test';
 	}
 
-sub update {
+sub update_bmt_prereqs ( @args ) {
 	my @modules = do {
 		my @found;
 		open my $fh, '<:utf8', __FILE__
