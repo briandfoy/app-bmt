@@ -438,12 +438,12 @@ sub show_perl_version ( @args ) {
 
 sub show_workflows ( @args ) {
 	state %colors = (
-		completed   => 'green',
-		queued      => 'cyan',
-		in_progress => 'yellow',
-		success     => 'green',
-		failure     => 'red',
-		default     => 'cyan',
+		completed   => 'bg_green',
+		queued      => 'bg_cyan',
+		in_progress => 'bg_yellow',
+		success     => 'bg_green',
+		failure     => 'bg_red',
+		default     => 'bg_cyan',
 		);
 
 	my $result = _ghojo()->list_workflow_runs( _github_owner_repo() );
@@ -466,7 +466,7 @@ sub show_workflows ( @args ) {
 
 		my $ex = $status eq 'completed' ? $conclusion : $status;
 
-		$ex = colored( [$colors{$ex || 'default'}], $ex );
+		$ex = do { no strict 'refs'; &{ $colors{$ex || 'default'} } . $ex . reset() };
 
 		printf "%-12s %-12s\n", $name, $ex;
 		}
