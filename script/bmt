@@ -51,6 +51,7 @@ my %Commands = (
 	help        => [ \&show_help,                             "show the help message"                            ],
 	issues      => [ sub { _browser( github( 'issues' )  ) }, "open the Github issues page"                      ],
 	licenses    => [ \&license_check,                         "list the licenses involved in dependencies"       ],
+	metacpan    => [ sub { _browser( metacpan_page() ) },     "show the MetaCPAN page"                        ],
 	module      => [ sub { say _main_module() },              "show the main module name"                        ],
 	open_all    => [ \&open_all,                              "open Github, Gitlab, and Bitbucket in one go"     ],
 	perlv       => [ \&show_perl_version,                     "show the declared Perl versions in various files" ],
@@ -663,6 +664,16 @@ Return the name of the main module
 =cut
 
 sub _main_module () { _settings()->{NAME} }
+
+=item * metacpan_page
+
+Return the MetaCPAN page for this module
+
+=cut
+
+sub metacpan_page () {
+	"https://metacpan.org/pod/" . _settings()->{NAME}
+	}
 
 =item * _open_darwin
 
