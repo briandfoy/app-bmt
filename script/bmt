@@ -1,11 +1,14 @@
 #!/Users/brian/bin/perl
 use v5.32;
 
+use App::bmt;
+
 package App::bmt;
 
 use experimental qw(signatures);
 
 use Antsy qw(:all);
+use File::Basename;
 use File::Spec::Functions;
 use Module::CoreList;
 use Mojo::Util qw(dumper trim);
@@ -51,7 +54,7 @@ my %Commands = (
 	help        => [ \&show_help,                             "show the help message"                            ],
 	issues      => [ sub { _browser( github( 'issues' )  ) }, "open the Github issues page"                      ],
 	licenses    => [ \&license_check,                         "list the licenses involved in dependencies"       ],
-	metacpan    => [ sub { _browser( metacpan_page() ) },     "show the MetaCPAN page"                        ],
+	metacpan    => [ sub { _browser( metacpan_page() ) },     "show the MetaCPAN page"                           ],
 	module      => [ sub { say _main_module() },              "show the main module name"                        ],
 	open_all    => [ \&open_all,                              "open Github, Gitlab, and Bitbucket in one go"     ],
 	perlv       => [ \&show_perl_version,                     "show the declared Perl versions in various files" ],
@@ -64,6 +67,7 @@ my %Commands = (
 	'default'   => [ \&show_help,                             "the default target (probably help)"               ],
 	dump_module => [ sub { say dumper( _metacpan()->module( _main_module() )->{data} ) }, "dump the MetaCPAN module info"       ],
 	dump_dist   => [ sub { say dumper( _metacpan()->release( _dist_name() )->{data} ) }, "dump the MetaCPAN dist info"       ],
+	version     => [ sub { say basename($0) . " version " . App::bmt->VERSION . " using Perl " . $^V }, "show the bmt version" ],
 	);
 
 run( @ARGV ) unless caller;
