@@ -385,7 +385,6 @@ sub make ( @targets ) {
 	}
 
 sub new_module ( @args ) {
-	state $rc = require Distribution::Cooker;
 	my( $module_name, @new_args ) = @args;
 	system( 'dist_cooker', $module_name );
 	}
