@@ -313,8 +313,8 @@ sub git_config ( @args ) {
 				no strict 'refs';
 				my $user = &{"_${remote}_user"}();
 				my $url = $origin_url =~ s|git\@github.com:(?:\S+?)/(\S+?)\.git$|$hosts{$remote}:$user/$1.git|r;
-				if( _repo_exists( $url ) ) { _git_run( 'git', 'remote', 'add', $remote, $url ); $url }
-				else                       { say "Remote URL <$url> is not a repo"; ()         }
+				_git_run( 'git', 'remote', 'add', $remote, $url );
+				$url
 				}
 			};
 		}
