@@ -186,6 +186,44 @@ Open the main Bitbucket page for this repo.
 
 sub bitbucket :register("open the main Bitbucket page") { _browser( _bitbucket_page() ) }
 
+=item * complete [FILE]
+
+Output a complete(1) command to FILE, or to F<~/.bmt-complete> if there is
+no file specified.
+
+=cut
+
+sub complete :register("output a completion script for complete") ( $file = '~/.bmt-complete' ) {
+	# https://iridakos.com/programming/2018/03/01/bash-programmable-completion-tutorial
+
+	my $fh;
+
+	$file =~ s|\A~/?|$ENV{HOME}/|;
+
+	if( $file eq '-' ) {
+		$fh = \*STDOUT;
+		}
+	else {
+		open $fh, '>:encoding(UTF-8)', $file
+			or die "Could not open <$file> for writing: $!\n";
+		}
+
+	print {$fh} <<~"HERE";
+		#/usr/bin/env bash
+		complete -W "@{ [ sort keys %Commands ]}" bmt
+		HERE
+	close $fh;
+
+	print <<~"HERE" unless $file eq '-';
+		# Add this to your .bash_profile:
+
+		BMT_COMPLETE=$file
+		if [ -f "\$BMT_COMPLETE" ]; then
+			source \$BMT_COMPLETE
+		fi
+		HERE
+	}
+
 =item * cpan_testers
 
 Output the latest CPAN Testers results for this module.
