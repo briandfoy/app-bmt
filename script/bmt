@@ -76,6 +76,9 @@ sub run ( @args ) {
 		$Commands{$command}->[0]( @cmd_args );
 		}
 	else {
+		state $rc = require Text::Fuzzy;
+		my $tf = Text::Fuzzy->new($command);
+		my $nearest = $tf->nearestv( [ keys %Commands ] );
 		say STDERR "Command <$command> wasn't found; perhaps you meant <$nearest>?\nSee `$0 help`";
 		}
 	}
