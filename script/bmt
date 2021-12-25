@@ -934,6 +934,12 @@ Return the name of the main module
 
 sub _main_module () { _settings()->{NAME} }
 
+=item * _make( TARGETS )
+
+Re-run F<Makefile.PL> and run C<make> with the specified TARGETS.
+
+=cut
+
 sub _make ( @targets ) {
 	`$^X Makefile.PL 2>&1`;
 	`make @targets`;
