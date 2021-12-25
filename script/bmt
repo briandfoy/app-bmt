@@ -144,14 +144,14 @@ sub all_remote :register("configure the all remote") ( @args ) {
 				no strict 'refs';
 				my $user = &{"_${remote}_user"}();
 				my $url = $origin_url =~ s|git\@github.com:(?:\S+?)/(\S+?)\.git$|$hosts{$remote}:$user/$1.git|r;
-				_run_command( 'git', 'remote', 'add', $remote, $url );
+				_run_git_command( 'git', 'remote', 'add', $remote, $url );
 				$url
 				}
 			};
 		}
 
 	unless( _remote_exists( 'all' ) ) {
-		_run_command( 'git', 'remote', 'add', 'all', $origin_url ),
+		_run_git_command( 'git', 'remote', 'add', 'all', $origin_url ),
 		}
 
 	# these already exist, so don't re-add them
@@ -164,7 +164,7 @@ sub all_remote :register("configure the all remote") ( @args ) {
 		_git_set_push_url( 'all', $url );
 		}
 
-	_run_command( 'git', 'push', '-u', 'all', 'master' );
+	_run_git_command( 'git', 'push', '-u', 'all', 'master' );
 	}
 
 =item * appveyor
@@ -839,7 +839,7 @@ Add the URL to REMOTE. This command has many pieces!
 =cut
 
 sub _git_set_push_url ( $remote, $url ) {
-	_run_command( 'git', 'remote', 'set-url', '--add', '--push', $remote, $url );
+	_run_git_command( 'git', 'remote', 'set-url', '--add', '--push', $remote, $url );
 	}
 
 sub _git_config_list ( $pattern = qr/./ ) {
@@ -1046,13 +1046,25 @@ Run LIST as a C<system> command.
 =cut
 
 sub _run_command ( @command ) {
-	die "This is not a git repo!\n" unless -e '.git';
 	system { $command[0] } @command;
+	}
+
+=item * _run_git_command( LIST )
+
+Run LIST as a C<system> command. If there is no F<.git> directory,
+this dies.
+
+=cut
+
+sub _run_git_command ( @command ) {
+	die "This is not a git repo!\n" unless -e '.git';
+	unshift @command, 'git' unless $command[0] eq 'git';
+	_run_command( @command );
 	}
 
 =item * _settings
 
-Get the C<WriteMakefileArgs> from F<Makefile.PL>
+Get the C<WriteMakefileArgs> from F<Makefile.PL>.
 
 =cut
 
@@ -1067,7 +1079,7 @@ sub _settings {
 
 =item * _ua
 
-Returns a Mojo::UserAgent object
+Returns a Mojo::UserAgent object.
 
 =cut
 
