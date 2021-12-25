@@ -13,6 +13,8 @@ use File::Spec::Functions;
 use Module::CoreList;
 use Mojo::Util qw(dumper trim);
 
+my %Commands;
+
 =head1 NAME
 
 bmt - brian's module tool
@@ -37,44 +39,38 @@ a package name. I can use that to call methods in the modulino.
 
 =cut
 
-my %Commands = (
-	actions     => [ sub { _browser( github('actions') ) },   "open the actions Github page"                     ],
-	appveyor    => [ sub { _browser( appveyor() )  },         "open the Appveyor page"                           ],
-	bitbucket   => [ sub { _browser( bitbucket() ) },         "open the main Bitbucket page"                     ],
-	cpantesters => [ \&cpan_testers,                          "show Testers result for the latest version"       ],
-	cpanv       => [ \&cpan_info,                             "show the lastest CPAN version"                    ],
-	create_bb   => [ sub { create_bitbucket() },              "create a BitBucket repo"                          ],
-	create_gh   => [ sub { create_github() },                 "create a GitHub repo"                             ],
-	create_gl   => [ sub { create_gitlab() },                 "create a GitLab repo"                             ],
-	deps        => [ \&deps,                                  "show the dependency chain for this dist"          ],
-	gh_name     => [ \&gh_name,                               "show the full_name of the Github repo"            ],
-	git_config  => [ \&git_config,                            "configure the all remote"                         ],
-	github      => [ sub { _browser( github() ) },            "open the main Github page"                        ],
-	gitlab      => [ sub { _browser( gitlab() ) },            "open the main Gitlab page"                        ],
-	help        => [ \&show_help,                             "show the help message"                            ],
-	issues      => [ sub { _browser( github( 'issues' )  ) }, "open the Github issues page"                      ],
-	licenses    => [ \&license_check,                         "list the licenses involved in dependencies"       ],
-	metacpan    => [ sub { _browser( metacpan_page() ) },     "show the MetaCPAN page"                           ],
-	module      => [ sub { say _main_module() },              "show the main module name"                        ],
-	open_all    => [ \&open_all,                              "open Github, Gitlab, and Bitbucket in one go"     ],
-	perlv       => [ \&show_perl_version,                     "show the declared Perl versions in various files" ],
-	releases    => [ \&release_history,                       "show the recent release history"                  ],
-	new         => [ \&new_module,                            "make a new module directory"                      ],
-	test        => [ \&test,                                  "run the tests"                                    ],
-	update      => [ \&update_bmt_prereqs,                    "update the modules this tool needs"               ],
-	workflows   => [ \&show_workflows,                        "show the last set of workflows"                   ],
+sub MODIFY_CODE_ATTRIBUTES ( $package, $code_ref, $attribute ) {
+	my( $attribute_name ) = $attribute =~ m/\A(\w+)/;
 
-	'default'   => [ \&show_help,                             "the default target (probably help)"               ],
-	dump_module => [ sub { say dumper( _metacpan()->module( _main_module() )->{data} ) }, "dump the MetaCPAN module info"       ],
-	dump_dist   => [ sub { say dumper( _metacpan()->release( _dist_name() )->{data} ) }, "dump the MetaCPAN dist info"       ],
-	version     => [ sub { say basename($0) . " version " . App::bmt->VERSION . " using Perl " . $^V }, "show the bmt version" ],
-	);
+	no strict 'refs';
+	if( exists &{"_$attribute_name"} ) { return &{"_$attribute_name"}( @_ ) }
+	else { die "Unknown attribute <$attribute_name>\n" }
+	}
+
+sub _register ( $package, $code_ref, $attribute ) {
+	my $rc = require B;
+	my( $sub_name )    = B::svref_2object( $code_ref )->GV->NAME;
+	my( $description ) = $attribute =~ m/ \A register \( \s* " ([^"]+) " \s* \) /x;
+
+	$Commands{ $sub_name } = [ $code_ref, $description ];
+
+	return;
+	}
+
+my %Config;
 
 run( @ARGV ) unless caller;
 
 sub run ( @args ) {
 	my( $command, @cmd_args ) = @args;
-	$command //= 'default';
+	$command //= 'help';
+
+	my $config_file = catfile( $ENV{HOME}, '.bmt' );
+	if( -e $config_file ) {
+		state $rc = require Mojo::File;
+		state $rc2 = require Mojo::JSON;
+		%Config = Mojo::JSON::decode_json( Mojo::File->new( $config_file )->slurp )->%*;
+		}
 
 	if( exists $Commands{$command} ) {
 		$Commands{$command}->[0]( @cmd_args );
@@ -84,22 +80,136 @@ sub run ( @args ) {
 		}
 	}
 
-sub open_all ( @args ) {
-	_browser($_) for ( gitlab(), bitbucket(), github(), appveyor() );
+=head2 Commands
+
+=cut
+
+
+=item * actions
+
+Open the GitHub actions page.
+
+=cut
+
+sub actions   :register("open the actions Github page") { _browser( github('actions') ) }
+
+=item * all_remote
+
+I like to have my repos stored on multiple services so I can tolerate
+the failure of a couple of them. So far I use Github as the primary
+and Bitbucket and Gitlab as the backups.
+
+There's a curious thing you can do with a remote: it can take multiple
+push urls. Use Github as the fetch URL, but push to all the services
+through one remote. Since I don't mess with Bitbucket or Gitlab, those
+should never be out of sync. And, it they are, I just delete the repo
+and start again with a fresh push.
+
+This bit of code took me awhile to simplify to the point where it
+could work. The goal is to collect all the URLs I need to push to.
+
+First, there has to be an origin. I'd like to fix that at some point,
+but that's how it is now. That's Github.
+
+Second, there might already be remotes for Bitbucket and Gitlab. If
+there are, grab their URLs. If there aren't, make them. The trick is
+to guess what the URLs should be since I have several owners on Github
+(counting organizations) but only single personal accounts on the
+other services.
+
+Then, if there isn't a remote named 'all', make that with Github
+address. Grab all those URLs from the other remotes and add those as
+pushurls if all doesn't already have them.
+
+=cut
+
+sub all_remote :register("configure the all remote") ( @args ) {
+	my $origin_url = _fetch_url( 'origin' );
+	unless( $origin_url ) {
+		say "No URL for origin. Aborting...";
+		return;
+		}
+
+	my %hosts = (
+		bitbucket => 'git@bitbucket.org',
+		gitlab    => 'git@gitlab.com',
+		);
+
+	my %remotes = ( 'origin', $origin_url );
+	my @remotes = qw( bitbucket gitlab );
+	foreach my $remote ( @remotes ) {
+		$remotes{$remote} = do {
+			if( _remote_exists( $remote ) ) { _capture_command( "git config remote.$remote.url" ) }
+			else {
+				no strict 'refs';
+				my $user = &{"_${remote}_user"}();
+				my $url = $origin_url =~ s|git\@github.com:(?:\S+?)/(\S+?)\.git$|$hosts{$remote}:$user/$1.git|r;
+				_run_command( 'git', 'remote', 'add', $remote, $url );
+				$url
+				}
+			};
+		}
+
+	unless( _remote_exists( 'all' ) ) {
+		_run_command( 'git', 'remote', 'add', 'all', $origin_url ),
+		}
+
+	# these already exist, so don't re-add them
+	my %push_urls =
+		map { chomp; $_ => 1 }
+		_capture_command( "git config --get-all remote.all.pushurl" );
+
+	foreach my $url ( grep { defined } values %remotes ) {
+		next if exists $push_urls{$url};
+		_git_set_push_url( 'all', $url );
+		}
+
+	_run_command( 'git', 'push', '-u', 'all', 'master' );
 	}
 
-sub appveyor ( @args ) {
-	sprintf "https://ci.appveyor.com/project/%s/%s", _github_owner_repo();
+=item * appveyor
+
+Open the main Appveyor page for this repo.
+
+=cut
+
+sub appveyor  :register("open the Appveyor page")       { _browser( _appveyor_page() ) }
+
+=item * bitbucket
+
+Open the main Bitbucket page for this repo.
+
+=cut
+
+sub bitbucket :register("open the main Bitbucket page") { _browser( _bitbucket_page() ) }
+
+=item * cpan_testers
+
+Output the latest CPAN Testers results for this module.
+
+=cut
+
+sub cpan_testers :register("show Testers result for the latest version") ( $release = undef ) {
+	$release //= _latest_release_version();
+	my $dist_name = _dist_name();
+	my $url = sprintf 'http://api.cpantesters.org/v3/summary/%s/%s', $dist_name, $release;
+
+	my $data = _ua()->get( $url )->result->json;
+	return unless ref $data eq ref [];
+	my $results = _classify( 'grade', $data );
+	sprintf '%s / %s / %s',
+		text_green() . (sprintf '%3s', $results->{pass} // '-') . reset(),
+		text_red()   . (sprintf '%3s', $results->{fail} // '-') . reset(),
+		text_cyan()  . (sprintf '%3s', $results->{na}   // '-') . reset();
 	}
 
-sub bitbucket ( @args ) {
-	my $url = _fetch_url( 'bitbucket' );
-	# git@bitbucket.org:briandfoy/mac-propertylist.git
-	$url =~ s|git\@bitbucket.org:|https://www.bitbucket.org/|;
-	$url;
-	}
+=item * cpanv
 
-sub cpan_info ( @args ) {
+Output the latest CPAN version and release date.
+
+=cut
+
+sub cpanv :register("show the lastest CPAN version") ( @args ) {
 	my $module = _metacpan()->module( _main_module() );
 
 	my $date    = $module->{data}{date};
@@ -108,48 +218,23 @@ sub cpan_info ( @args ) {
 	say "CPAN: @{[_main_module()]} $version ---> $date";
 	}
 
-=begin ignore
+=item * create_bb
 
-{
-"reporter":"\"Slaven Rezi&#x107;\" <srezic@cpan.org>",
-"grade":"pass",
-"osname":"linux",
-"perl":"5.30.2",
-"osvers":"5.4.0-33-generic",
-"date":"2021-02-26T16:21:00Z",
-"version":"2.127_04",
-"guid":"a9a736ec-784e-11eb-841d-be631f24ea8f",
-"dist":"Module-Release",
-"platform":"x86_64-linux"
-}
+Create the Bitbucket repo. This does not push the repo.
 
-=end ignore
+=item * create_gh
+
+Create the GitHub repo. This does not push the repo.
+
+=item * create_gl
+
+Create the Gitlab repo. This does not push the repo.
 
 =cut
 
-sub classify ( $key, $data = [] ) {
-	my $results = {};
-	foreach my $item ( $data->@* ) {
-		$results->{ $item->{$key} }++;
-		}
-	$results;
-	}
-
-sub _cpan_testers ( $release = undef ) {
-	$release //= _latest_release_version();
-	my $dist_name = _dist_name();
-	my $url = sprintf 'http://api.cpantesters.org/v3/summary/%s/%s', $dist_name, $release;
-
-	my $data = _ua()->get( $url )->result->json;
-	return unless ref $data eq ref [];
-	my $results = classify( 'grade', $data );
-	sprintf '%s / %s / %s',
-		text_green() . (sprintf '%3s', $results->{pass} // '-') . reset(),
-		text_red()   . (sprintf '%3s', $results->{fail} // '-') . reset(),
-		text_cyan()  . (sprintf '%3s', $results->{na}   // '-') . reset();
-	}
-
-sub cpan_testers ( @args ) { say &_cpan_testers }
+sub create_bb :register("create a BitBucket repo") { create_bitbucket() }
+sub create_gh :register("create a GitHub repo")    { create_github() }
+sub create_gl :register("create a GitLab repo")    { create_gitlab() }
 
 sub create_bitbucket ( @args ) {
 	my $ua = _ua();
@@ -175,8 +260,24 @@ sub create_bitbucket ( @args ) {
 		};
 	}
 
-sub create_github ( @args ) {
-	say "Creating Github not yet a feature"
+sub create_github ( $name, $description = 'An undescribed module' ) {
+	my $ghojo = _ghojo();
+
+	my $name //= do {
+		my $settings = eval {
+			my $r = _settings()->{META_MERGE}{resources}{repository}{url};
+			my( $project ) = m{(?:git\@github.com:|https?://github.com/)[^/]+/([^/]+)};
+			} // {};
+		$settings->{META_MERGE}{resources}
+		};
+
+	my $rc = $ghojo->create_repo( $name, $description );
+	if( $rc->is_success ) {
+		say "Created repo <$name>";
+		}
+	else {
+		die "Counld not create repo <$name>: " . dumper($rc);
+		}
 	}
 
 sub create_gitlab ( @args ) {
@@ -201,33 +302,25 @@ sub create_gitlab ( @args ) {
 		};
 	}
 
-sub create_repos ( @args ) {
+=item * create_repos
+
+Create the GitHub, BitBucket, and Gitlab repos.
+
+=cut
+
+sub create_repos :register("create GitHub, Bitbucket, and Gitlab in one go") {
 	&create_github;
 	&create_bitbucket;
 	&create_gitlab;
 	}
 
-=begin ignore
+=item * deps
 
-    {
-      "module" => "ExtUtils::MakeMaker",
-      "phase" => "configure",
-      "relationship" => "requires",
-      "version" => "6.64"
-    }
-
-=end ignore
+Output the dependency chain.
 
 =cut
 
-sub _module_to_dist ( $module ) {
-	state $mcpan = _metacpan();
-	state $cache = {};
-	return $cache->{$module} if exists $cache->{$module};
-	$cache->{$module} = eval { $mcpan->module( $module )->{data}{distribution} };
-	}
-
-sub deps {
+sub deps :register("show the dependency chain for this dist") {
 	my @queue = ( [ 0, _dist_name()] );
 	my $mcpan = _metacpan();
 
@@ -258,102 +351,94 @@ sub deps {
 	say $string;
 	}
 
-sub gh_name ( @args ) {
-	say join '/', _github_owner_repo();
-	}
+=item * dump_dist
 
-=item * git_config
+Output as JSON the distribution information from MetaCPAN.
 
-I like to have my repos stored on multiple services so I can tolerate
-the failure of a couple of them. So far I use Github as the primary
-and Bitbucket and Gitlab as the backups.
-
-There's a curious thing you can do with a remote: it can take multiple
-push urls. Use Github as the fetch URL, but push to all the services
-through one remote. Since I don't mess with Bitbucket or Gitlab, those
-should never be out of sync. And, it they are, I just delete the repo
-and start again with a fresh push.
-
-This bit of code took me awhile to simplify to the point where it
-could work. The goal is to collect all the URLs I need to push to.
-
-First, there has to be an origin. I'd like to fix that at some point,
-but that's how it is now. That's Github.
-
-Second, there might already be remotes for Bitbucket and Gitlab. If
-there are, grab their URLs. If there aren't, make them. The trick is
-to guess what the URLs should be since I have several owners on Github
-(counting organizations) but only single personal accounts on the
-other services.
-
-Then, if there isn't a remote named 'all', make that with Github
-address. Grab all those URLs from the other remotes and add those as
-pushurls if all doesn't already have them.
+	$ bmt dump_dist | jq -r .download_url
+	https://cpan.metacpan.org/authors/id/B/BD/BDFOY/Tie-Cycle-1.226.tar.gz
 
 =cut
 
-sub git_config ( @args ) {
-	my $origin_url = _fetch_url( 'origin' );
-	unless( $origin_url ) {
-		say "No URL for origin. Aborting...";
-		return;
-		}
-
-	my %hosts = (
-		bitbucket => 'git@bitbucket.org',
-		gitlab    => 'git@gitlab.com',
-		);
-
-	my %remotes = ( 'origin', $origin_url );
-	my @remotes = qw( bitbucket gitlab );
-	foreach my $remote ( @remotes ) {
-		$remotes{$remote} = do {
-			if( _remote_exists( $remote ) ) { _git_capture( "git config remote.$remote.url" ) }
-			else {
-				no strict 'refs';
-				my $user = &{"_${remote}_user"}();
-				my $url = $origin_url =~ s|git\@github.com:(?:\S+?)/(\S+?)\.git$|$hosts{$remote}:$user/$1.git|r;
-				_git_run( 'git', 'remote', 'add', $remote, $url );
-				$url
-				}
-			};
-		}
-
-	unless( _remote_exists( 'all' ) ) {
-		_git_run( 'git', 'remote', 'add', 'all', $origin_url ),
-		}
-
-	# these already exist, so don't re-add them
-	my %push_urls =
-		map { chomp; $_ => 1 }
-		_git_capture( "git config --get-all remote.all.pushurl" );
-
-	foreach my $url ( grep { defined } values %remotes ) {
-		next if exists $push_urls{$url};
-		_git_set_push_url( 'all', $url );
-		}
-
-	_git_run( 'git', 'push', '-u', 'all', 'master' );
+sub dump_dist :register("output JSON for the MetaCPAN distribution info") {
+	state $rc = require Mojo::JSON;
+	say Mojo::JSON::encode_json( _metacpan()->release( _dist_name() )->{data} );
 	}
 
-sub github ( $path = '',  @args ) {
-	_settings()->{META_MERGE}{resources}{repository}{web} . "/$path";
+=item * dump_module
+
+Output as JSON the module information from MetaCPAN.
+
+	$ bmt dump_module | jq -r .version
+	1.226
+
+=cut
+
+sub dump_module :register("output JSON for the MetaCPAN module info") {
+	state $rc = require Mojo::JSON;
+	say Mojo::JSON::encode_json( _metacpan()->module( _main_module() )->{data} )
 	}
 
-sub gitlab ( @args ) {
-	my $url = _fetch_url( 'gitlab' );
-	# git@gitlab.com:briandfoy/mac-propertylist.git
-	$url =~ s|git\@gitlab.com:|https://www.gitlab.com/|;
-	$url;
+=item * gh_name
+
+Output the GitHub repository name ("owner/repo")
+
+	$ bmt gh_name
+	briandfoy/tie-cycle
+
+=cut
+
+sub gh_name :register("show the full_name of the Github repo") ( @args ) {
+	say join '/', _github_owner_repo();
 	}
 
-sub _license_for ( $dist ) {
-	state $Seen;
-	return $Seen->{$dist} if exists $Seen->{$dist};
-	$Seen->{$dist} = join ', ', _metacpan()->release($dist)->{data}{license}->@*;
+=item *
+
+Open the GitHub main page for this repo.
+
+=cut
+
+sub github :register("open the main Github page") { _browser( github() ) }
+
+=item * gitlab
+
+Open the Gitlab main page for this repo.
+
+=cut
+
+sub gitlab :register("open the main Gitlab page") { _browser( gitlab() ) }
+
+=item * help
+
+Output a list of commands. This is the default command that bmt uses
+when you do not specify a command.
+
+=cut
+
+sub help :register("show the help message") ( @args ) {
+	my( $longest ) = sort { length $b <=> length $a } keys %Commands;
+	my $length = length $longest;
+
+	say join "\n", map {
+		sprintf "%-${length}s     %s", $_, $Commands{$_}->[1]
+		} sort keys %Commands;
 	}
 
-sub license_check {
+=item * issues
+
+Open the GitHub issues page.
+
+=cut
+
+sub issues :register("open the Github issues page") { _browser( github( 'issues' ) ) }
+
+=item * licenses
+
+List the licenses for all dependencies.
+
+=cut
+
+sub licenses :register("list the licenses involved in dependencies") {
 	my @queue = ( [ 0, _dist_name()] );
 	my $mcpan = _metacpan();
 
@@ -384,45 +469,66 @@ sub license_check {
 	say "Licenses: ", join " ", sort keys $Licenses->%*;
 	}
 
-sub make ( @targets ) {
-	`$^X Makefile.PL 2>&1`;
-	`make @targets`;
+=item * metacpan
+
+Open the MetaCPAN page.
+
+=cut
+
+sub metacpan :register("open the MetaCPAN page")      { _browser( _metacpan_page() ) }
+
+=item * module
+
+Output the name of the main module.
+
+=cut
+
+sub module :register("output the main module name") { say _main_module() }
+
+=item * new_module MODULE_NAME DESCRIPTION REPO_NAME
+
+Use L<Distritbution::Cooker> to start a new module repository.
+
+=cut
+
+sub new_module :register("make a new module directory") ( $module_name, $description, $repo_name ) {
+	$description //= "Undescribed module $module_name";
+	$repo_name   //= sprintf 'https://github.com/%s/%s', _github_user(), lc($module_name) =~ s/::/-/gr;
+
+	state $rc = require Distribution::Cooker;
+	Distribution::Cooker->run( $module_name, $description, $repo_name );
 	}
 
-sub new_module ( @args ) {
-	my( $module_name, @new_args ) = @args;
-	system( 'dist_cooker', $module_name );
+=item * null
+
+Do nothing.
+
+=cut
+
+sub null :register("do nothing") { 1 }
+
+=item * open_all
+
+Open the Github, Gitlab, Bitbucket, and Appveyor pages all at once.
+
+=cut
+
+sub open_all :register("open Github, Gitlab, and Bitbucket in one go") ( @args ) {
+	_browser($_) for ( gitlab(), bitbucket(), github(), appveyor() );
 	}
 
-sub release_history ( @args ) {
-	cpan_info();
-	print "\n";
+=item * perlv
 
-	my $releases = _releases();
+Show the declared Perl versions in the Perl module files.
 
-	foreach my $release ( $releases->@* ) {
-		state $count = 0;
-		next unless ref $release;
-		last if $count++ > 10;
-		printf "%15s   %-10s  %s\n", _cpan_testers($release->[0]), $release->@*;
-		}
-	}
+=cut
 
-sub show_help ( @args ) {
-	my( $longest ) = sort { length $b <=> length $a } keys %Commands;
-	my $length = length $longest;
-
-	say join "\n", map {
-		sprintf "%-${length}s     %s", $_, $Commands{$_}->[1]
-		} sort keys %Commands;
-	}
-
-sub show_perl_version ( @args ) {
+sub perlv :register("show the declared Perl versions in various files") ( @args ) {
 	state $rc = require Module::Extract::DeclaredMinimumPerl;
 
 	my $minv = _settings()->{MIN_PERL_VERSION};
 
-	make();
+	_make();
 
 	chomp( my @files = `find blib -name '*.pm'` );
 
@@ -440,7 +546,113 @@ sub show_perl_version ( @args ) {
 	HERE
 	}
 
-sub show_workflows ( @args ) {
+=item * releases
+
+Show the recent release history.
+
+=cut
+
+sub releases :register("show the recent release history") ( @args ) {
+	cpan_info();
+	print "\n";
+
+	my $releases = _releases();
+
+	foreach my $release ( $releases->@* ) {
+		state $count = 0;
+		next unless ref $release;
+		last if $count++ > 10;
+		printf "%15s   %-10s  %s\n", _cpan_testers($release->[0]), $release->@*;
+		}
+	}
+
+=item * show_setup
+
+Show the bmt setup.
+
+=cut
+
+sub show_setup :register("show what bmt thinks things are" ) {
+	printf <<~"HERE", _github_user(), _gitlab_user(), _bitbucket_user();
+		Github user:    %s
+		Gitlab user:    %s
+		Bitbucket user: %s
+		HERE
+
+	}
+
+=item * start NAME DESCRIPTION
+
+Start a new module with NAME and DESCRIPTION. This is the same
+sequence as:
+
+	new_module
+
+=cut
+
+sub start ( $name, $description = 'An undescribed module' ) {
+	# make new module directory
+	new_module( $name, $description );
+
+	# set up git
+
+	# create github
+
+	# push to github
+
+	# create bitbucket, gitlab
+
+	# set up all
+	all_remote();
+
+	# push to all
+
+	}
+
+=item * test
+
+Run C<make test>.
+
+=cut
+
+sub test :register("run the tests") ( @args ) { _make("test") }
+
+=item * update_bmt
+
+Install the lastest versions of the modules that bmt uses.
+
+=cut
+
+sub update_bmt :register("update the modules this tool needs") ( @args ) {
+	my @modules = do {
+		my @found;
+		open my $fh, '<:utf8', __FILE__
+			or die "Could not open " . __FILE__ . ": $!\n";
+		while( <$fh> ) {
+			next unless m/
+				(?-x:require) \s+
+				(?<module>
+					[A-Z][A-Z0-9_]*
+					(?: \:\:[A-Z][A-Z0-9_]* )*
+				)
+				/ix;
+			push @found, $+{module};
+			}
+		@found;
+		};
+	say "Modules are <@modules>";
+
+	state $rc = require App::Cpan;
+	App::Cpan->run( @modules );
+	}
+
+=item * workflows
+
+Show a summary of the most recent GitHub action workflows.
+
+=cut
+
+sub workflows :register("show the last set of workflows") ( @args ) {
 	state %colors = (
 		completed   => 'bg_green',
 		queued      => 'bg_cyan',
@@ -476,44 +688,50 @@ sub show_workflows ( @args ) {
 		}
 	}
 
-sub test ( @args ) {
-	`$^X Makefile.PL 2>&1`;
-	system 'make', 'test';
-	}
+=item * version
 
-sub update_bmt_prereqs ( @args ) {
-	my @modules = do {
-		my @found;
-		open my $fh, '<:utf8', __FILE__
-			or die "Could not open " . __FILE__ . ": $!\n";
-		while( <$fh> ) {
-			next unless m/
-				(?-x:require) \s+
-				(?<module>
-					[A-Z][A-Z0-9_]*
-					(?: \:\:[A-Z][A-Z0-9_]* )*
-				)
-				/ix;
-			push @found, $+{module};
-			}
-		@found;
-		};
-	say "Modules are <@modules>";
-	system $^X, '/Users/brian/bin/cpan', @modules;
-	}
+Show the bmt version.
+
+=cut
+
+sub version :register("show the bmt version") { say basename($0) . " version " . App::bmt->VERSION . " using Perl " . $^V }
 
 
 =head2 Mostly internal functions
 
 =over 4
 
+=cut
+
+sub _appveyor_page ( @args ) {
+	sprintf "https://ci.appveyor.com/project/%s/%s", _github_owner_repo();
+	}
+
+sub _bitbucket_page ( @args ) {
+	my $url = _fetch_url( 'bitbucket' );
+	# git@bitbucket.org:briandfoy/mac-propertylist.git
+	$url =~ s|git\@bitbucket.org:|https://www.bitbucket.org/|;
+	$url;
+	}
+
 =item * _bitbucket_user
 
-Return the Bitbucket account name
+Return the Bitbucket account name. It searches for names in this order:
+
+    * The C<BITBUCKET_USER> environment variable
+    * The C<bitbucket_user> key in the config JSON object in F<~/.bmt>
+    * Literally C<briandfoy>
 
 =cut
 
-sub _bitbucket_user { 'briandfoy' }
+sub _bitbucket_user { $ENV{BITBUCKET_USER} // _bitbucket_user_from_all() // $Config{bitbucket_user} // 'briandfoy' }
+
+# remote.all.pushurl=git@bitbucket.org:briandfoy/distribution-cooker.git
+sub _bitbucket_user_from_all {
+	my( $line ) = _git_config_list( qr/^remote.all.pushurl=git\@bitbucket.org:/ );
+	my( $user ) = $line =~ qr|git\@bitbucket.org:(.+?)/|;
+	$user;
+	}
 
 =item * _bitbucket_app_password
 
@@ -536,6 +754,26 @@ sub _browser ( $url ) {
 	&{$handler};
 	}
 
+=item * _capture_command( STRING )
+
+Run the string as a command and return the result.
+
+=cut
+
+sub _capture_command ( $command ) {
+	die "This is not a git repo!\n" unless -e '.git';
+	chomp( my $v = `$command` );
+	$v;
+	}
+
+sub _classify ( $key, $data = [] ) {
+	my $results = {};
+	foreach my $item ( $data->@* ) {
+		$results->{ $item->{$key} }++;
+		}
+	$results;
+	}
+
 =item * _dist_name
 
 Return the dist name, which is the main module name with dashes instead
@@ -555,19 +793,9 @@ Get the fetch URL for the Git remote
 
 sub _fetch_url ( $remote_name ) {
 	my $command = "git config remote.${remote_name}.url";
-	chomp( my $git_url = _git_capture( $command ) );
+	chomp( my $git_url = _capture_command( $command ) );
 	warn "No $remote_name remote!\n" unless $git_url;
 	$git_url;
-	}
-
-=item * _git_set_push_url( REMOTE, URL )
-
-Add the URL to REMOTE. This command has many pieces!
-
-=cut
-
-sub _git_set_push_url ( $remote, $url ) {
-	_git_run( 'git', 'remote', 'set-url', '--add', '--push', $remote, $url );
 	}
 
 =item * _ghojo
@@ -604,16 +832,21 @@ sub _ghojo () {
 	$ghojo;
 	}
 
-=item * _git_capture
+=item * _git_set_push_url( REMOTE, URL )
 
-=item * _git_run
+Add the URL to REMOTE. This command has many pieces!
 
 =cut
 
-sub _git_capture ( $command ) {
-	die "This is not a git repo!\n" unless -e '.git';
-	chomp( my $v = `$command` );
-	$v;
+sub _git_set_push_url ( $remote, $url ) {
+	_run_command( 'git', 'remote', 'set-url', '--add', '--push', $remote, $url );
+	}
+
+sub _git_config_list ( $pattern = qr/./ ) {
+	my @matching =
+		grep { /$pattern/ }
+		split /\R/,
+		_capture_command( 'git config --list' );
 	}
 
 =item * _github_owner_repo
@@ -628,18 +861,56 @@ sub _github_owner_repo () {
 	my( $owner, $repo ) = $url =~ m|git\@github.com:(\S+?)/(\S+?)\.git|;
 	}
 
-sub _git_run ( @command ) {
-	die "This is not a git repo!\n" unless -e '.git';
-	system { $command[0] } @command;
+sub _github_page ( $path = '',  @args ) {
+	_settings()->{META_MERGE}{resources}{repository}{web} . "/$path";
+	}
+
+=item * _github_user
+
+Return the GitHub account name. It searches for names in this order:
+
+    * The C<GITHUB_USER> environment variable
+    * The GitHub account from the repo URL in the C<all> remote in F<.git/config>
+    * The C<github_user> key in the config JSON object in F<~/.bmt>
+    * Literally C<briandfoy>
+
+=cut
+
+sub _github_user { $ENV{GITHUB_USER} // _github_user_from_all() // $Config{github_user} // 'briandfoy' }
+
+# remote.all.pushurl=git@github.com:briandfoy/distribution-cooker.git
+sub _github_user_from_all {
+	my( $line ) = _git_config_list( qr/^remote.all.pushurl=git\@github.com:/ );
+	my( $user ) = $line =~ qr|git\@github.com:(.+?)/|;
+	$user;
+	}
+
+sub _gitlab_page ( @args ) {
+	my $url = _fetch_url( 'gitlab' );
+	# git@gitlab.com:briandfoy/mac-propertylist.git
+	$url =~ s|git\@gitlab.com:|https://www.gitlab.com/|;
+	$url;
 	}
 
 =item * _gitlab_user
 
-Return the Gitlab account name
+Return the Gitlab account name. It searches for names in this order:
+
+    * The C<GITLAB_USER> environment variable
+    * The Gitlab account from the repo URL in the C<all> remote in F<.git/config>
+    * The C<gitlab_user> key in the config JSON object in F<~/.bmt>
+    * Literally C<briandfoy>
 
 =cut
 
-sub _gitlab_user { 'briandfoy' }
+sub _gitlab_user { $ENV{GITLAB_USER} // _gitlab_user_from_all() // $Config{gitlab_user} // 'briandfoy' }
+
+# remote.all.pushurl=git@gitlab.com:briandfoy/distribution-cooker.git
+sub _gitlab_user_from_all {
+	my( $line ) = _git_config_list( qr/^remote.all.pushurl=git\@gitlab.com:/ );
+	my( $user ) = $line =~ qr|git\@gitlab.com:(.+?)/|;
+	$user;
+	}
 
 =item * _latest_release_version
 
@@ -649,16 +920,10 @@ Return the latest release version
 
 sub _latest_release_version { _releases()->[0][0] }
 
-=item * _metacpan
-
-Get a L<MetaCPAN::Client> object
-
-=cut
-
-sub _metacpan () {
-	state $rc = require MetaCPAN::Client;
-	state $mcpan = MetaCPAN::Client->new;
-	$mcpan;
+sub _license_for ( $dist ) {
+	state $Seen;
+	return $Seen->{$dist} if exists $Seen->{$dist};
+	$Seen->{$dist} = join ', ', _metacpan()->release($dist)->{data}{license}->@*;
 	}
 
 =item * _main_module
@@ -669,6 +934,42 @@ Return the name of the main module
 
 sub _main_module () { _settings()->{NAME} }
 
+sub _make ( @targets ) {
+	`$^X Makefile.PL 2>&1`;
+	`make @targets`;
+	}
+
+=item * _metacpan
+
+Get a L<MetaCPAN::Client> object
+
+=cut
+
+=begin ignore
+
+{
+"reporter":"\"Slaven Rezi&#x107;\" <srezic@cpan.org>",
+"grade":"pass",
+"osname":"linux",
+"perl":"5.30.2",
+"osvers":"5.4.0-33-generic",
+"date":"2021-02-26T16:21:00Z",
+"version":"2.127_04",
+"guid":"a9a736ec-784e-11eb-841d-be631f24ea8f",
+"dist":"Module-Release",
+"platform":"x86_64-linux"
+}
+
+=end ignore
+
+=cut
+
+sub _metacpan () {
+	state $rc = require MetaCPAN::Client;
+	state $mcpan = MetaCPAN::Client->new;
+	$mcpan;
+	}
+
 =item * metacpan_page
 
 Return the MetaCPAN page for this module
@@ -677,6 +978,13 @@ Return the MetaCPAN page for this module
 
 sub metacpan_page () {
 	"https://metacpan.org/pod/" . _settings()->{NAME}
+	}
+
+sub _module_to_dist ( $module ) {
+	state $mcpan = _metacpan();
+	state $cache = {};
+	return $cache->{$module} if exists $cache->{$module};
+	$cache->{$module} = eval { $mcpan->module( $module )->{data}{distribution} };
 	}
 
 =item * _open_darwin
@@ -714,7 +1022,7 @@ Returns true if there's a remote with name REMOTE
 =cut
 
 sub _remote_exists ( $remote ) {
-	chomp( my @remotes = split /\R/, _git_capture( "git remote" ) );
+	chomp( my @remotes = split /\R/, _capture_command( "git remote" ) );
 	scalar grep { $_ eq $remote } @remotes;
 	}
 
@@ -727,8 +1035,19 @@ Returns true if the git URL is actually a repo.
 =cut
 
 sub _repo_exists ( $url ) {
-	my $output = _git_capture( "git ls-remote $url 2>&1" );
+	my $output = _capture_command( "git ls-remote $url 2>&1" );
 	$output =~ m/\A[a-h0-9]{40}\s+HEAD\R/;
+	}
+
+=item * _run_command( LIST )
+
+Run LIST as a C<system> command.
+
+=cut
+
+sub _run_command ( @command ) {
+	die "This is not a git repo!\n" unless -e '.git';
+	system { $command[0] } @command;
 	}
 
 =item * _settings
@@ -759,6 +1078,16 @@ sub _ua {
 	}
 
 =back
+
+=cut
+
+=head1 COPYRIGHT
+
+Copyright © 2019-2022 brian d foy. All rights reserved.
+
+=head1 LICENSE
+
+You can use this code under the terms of the Artistic Licence 2.0.
 
 =cut
 
