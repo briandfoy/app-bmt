@@ -623,7 +623,7 @@ Install the lastest versions of the modules that bmt uses.
 
 =cut
 
-sub update_bmt :register("update the modules this tool needs") ( @args ) {
+sub update_bmt :register("update the modules this tool needs") () {
 	my @modules = do {
 		my @found;
 		open my $fh, '<:utf8', __FILE__
