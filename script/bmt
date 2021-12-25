@@ -144,14 +144,14 @@ sub all_remote :register("configure the all remote") ( @args ) {
 				no strict 'refs';
 				my $user = &{"_${remote}_user"}();
 				my $url = $origin_url =~ s|git\@github.com:(?:\S+?)/(\S+?)\.git$|$hosts{$remote}:$user/$1.git|r;
-				_run_git_command( 'git', 'remote', 'add', $remote, $url );
+				_run_git_command( 'remote', 'add', $remote, $url );
 				$url
 				}
 			};
 		}
 
 	unless( _remote_exists( 'all' ) ) {
-		_run_git_command( 'git', 'remote', 'add', 'all', $origin_url ),
+		_run_git_command( 'remote', 'add', 'all', $origin_url ),
 		}
 
 	# these already exist, so don't re-add them
@@ -164,7 +164,7 @@ sub all_remote :register("configure the all remote") ( @args ) {
 		_git_set_push_url( 'all', $url );
 		}
 
-	_run_git_command( 'git', 'push', '-u', 'all', 'master' );
+	_run_git_command( 'push', '-u', 'all', 'master' );
 	}
 
 =item * appveyor
@@ -839,7 +839,7 @@ Add the URL to REMOTE. This command has many pieces!
 =cut
 
 sub _git_set_push_url ( $remote, $url ) {
-	_run_git_command( 'git', 'remote', 'set-url', '--add', '--push', $remote, $url );
+	_run_git_command( 'remote', 'set-url', '--add', '--push', $remote, $url );
 	}
 
 sub _git_config_list ( $pattern = qr/./ ) {
