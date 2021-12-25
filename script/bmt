@@ -970,13 +970,13 @@ sub _metacpan () {
 	$mcpan;
 	}
 
-=item * metacpan_page
+=item * _metacpan_page
 
 Return the MetaCPAN page for this module
 
 =cut
 
-sub metacpan_page () {
+sub _metacpan_page () {
 	"https://metacpan.org/pod/" . _settings()->{NAME}
 	}
 
