@@ -94,7 +94,7 @@ Open the GitHub actions page.
 
 =cut
 
-sub actions   :register("open the actions Github page") { _browser( github('actions') ) }
+sub actions :register("open the actions Github page") { _browser( github('actions') ) }
 
 =item * all_remote
 
@@ -176,7 +176,7 @@ Open the main Appveyor page for this repo.
 
 =cut
 
-sub appveyor  :register("open the Appveyor page")       { _browser( _appveyor_page() ) }
+sub appveyor :register("open the Appveyor page")       { _browser( _appveyor_page() ) }
 
 =item * bitbucket
 
