@@ -641,9 +641,8 @@ sub update_bmt :register("update the modules this tool needs") () {
 				/ix;
 			push @found, $+{module};
 			}
-		@found;
+		sort @found;
 		};
-	say "Modules are <@modules>";
 
 	state $rc = require App::Cpan;
 	App::Cpan->run( @modules );
