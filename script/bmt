@@ -5,9 +5,13 @@ use App::bmt;
 
 package App::bmt;
 
+use lib qw(/Users/brian/Dev/ghojo/lib);
+
 use experimental qw(signatures);
+use B;
 
 use Antsy qw(:all);
+use Cwd qw(getcwd);
 use File::Basename;
 use File::Spec::Functions;
 use Module::CoreList;
@@ -40,15 +44,37 @@ a package name. I can use that to call methods in the modulino.
 =cut
 
 sub MODIFY_CODE_ATTRIBUTES ( $package, $code_ref, $attribute ) {
-	my( $attribute_name ) = $attribute =~ m/\A(\w+)/;
+	my( $sub_name )    = B::svref_2object( $code_ref )->GV->NAME;
+
+	my( $attribute_name ) = map { uc() } $attribute =~ m/\A(\w+)/;
 
 	no strict 'refs';
-	if( exists &{"_$attribute_name"} ) { return &{"_$attribute_name"}( @_ ) }
-	else { die "Unknown attribute <$attribute_name>\n" }
+	if( exists &{"ATTRIBUTE_$attribute_name"} ) { return &{"ATTRIBUTE_$attribute_name"}( @_ ) }
+	else { die "Unknown attribute <$attribute_name> on <$sub_name>\n" }
 	}
 
-sub _register ( $package, $code_ref, $attribute ) {
-	my $rc = require B;
+sub ATTRIBUTE_TRACE ( $package, $code_ref, $attribute ) {
+	my( $sub_name )    = B::svref_2object( $code_ref )->GV->NAME;
+
+	*{$sub_name} = sub ( @args ) {
+		my @caller = caller(1);
+		say "Entering <$sub_name>";
+		my @return;
+		if( wantarray ) {
+			push @return, $code_ref->( @args );
+			}
+		else {
+			push @return, scalar $code_ref->( @args );
+			}
+
+		say "Leaving <$sub_name>";
+		return wantarray ? @return : $return[0];
+		};
+
+	return;
+	}
+
+sub ATTRIBUTE_REGISTER ( $package, $code_ref, $attribute ) {
 	my( $sub_name )    = B::svref_2object( $code_ref )->GV->NAME;
 	my( $description ) = $attribute =~ m/ \A register \( \s* " ([^"]+) " \s* \) /x;
 
@@ -127,34 +153,36 @@ pushurls if all doesn't already have them.
 =cut
 
 sub all_remote :register("configure the all remote") ( @args ) {
-	my $origin_url = _fetch_url( 'origin' );
-	unless( $origin_url ) {
-		say "No URL for origin. Aborting...";
+	my $url = _git_fetch_url( 'origin' ) // _git_fetch_url( 'all' );
+	say "all_remote: url: <$url>";
+
+	unless( $url ) {
+		say "No URL for origin or all. Aborting...";
 		return;
 		}
 
 	my %hosts = (
 		bitbucket => 'git@bitbucket.org',
 		gitlab    => 'git@gitlab.com',
+		github    => 'git@github.com',
 		);
 
-	my %remotes = ( 'origin', $origin_url );
-	my @remotes = qw( bitbucket gitlab );
-	foreach my $remote ( @remotes ) {
+	my %remotes;
+	foreach my $remote ( keys %hosts ) {
 		$remotes{$remote} = do {
 			if( _remote_exists( $remote ) ) { _capture_command( "git config remote.$remote.url" ) }
 			else {
 				no strict 'refs';
 				my $user = &{"_${remote}_user"}();
-				my $url = $origin_url =~ s|git\@github.com:(?:\S+?)/(\S+?)\.git$|$hosts{$remote}:$user/$1.git|r;
+				my $push_url = $url =~ s|git\@github.com:(?:\S+?)/(\S+?)\.git$|$hosts{$remote}:$user/$1.git|r;
 				_run_git_command( 'remote', 'add', $remote, $url );
-				$url
+				$push_url
 				}
 			};
 		}
 
 	unless( _remote_exists( 'all' ) ) {
-		_run_git_command( 'remote', 'add', 'all', $origin_url ),
+		_run_git_command( 'remote', 'add', 'all', $url ),
 		}
 
 	# these already exist, so don't re-add them
@@ -304,15 +332,11 @@ sub create_bitbucket ( @args ) {
 sub create_github ( $name, $description = 'An undescribed module' ) {
 	my $ghojo = _ghojo();
 
-	my $name //= do {
-		my $settings = eval {
-			my $r = _settings()->{META_MERGE}{resources}{repository}{url};
-			my( $project ) = m{(?:git\@github.com:|https?://github.com/)[^/]+/([^/]+)};
-			} // {};
-		$settings->{META_MERGE}{resources}
-		};
+	my( $owner, $repo ) = _github_owner_repo();
+ say "create_github: owner <$owner> repo <$repo>";
 
-	my $rc = $ghojo->create_repo( $name, $description );
+	my $rc = $ghojo->create_repo( { name => $repo, description => $description } );
+
 	if( $rc->is_success ) {
 		say "Created repo <$name>";
 		}
@@ -349,10 +373,16 @@ Create the GitHub, BitBucket, and Gitlab repos.
 
 =cut
 
-sub create_repos :register("create GitHub, Bitbucket, and Gitlab in one go") {
-	&create_github;
-	&create_bitbucket;
-	&create_gitlab;
+sub create_repos :register("create GitHub, Bitbucket, and Gitlab in one go") ( $repo_name, $description ) {
+	create_github( $repo_name, $description );
+	my $remote = sprintf 'git@github.com:%s/%s.git', _github_user(), $repo_name;
+	_run_git_command( 'remote', 'add', 'all', $remote );
+
+	create_bitbucket();
+
+	create_gitlab();
+
+	all_remote();
 	}
 
 =item * deps
@@ -415,9 +445,14 @@ Output as JSON the module information from MetaCPAN.
 
 =cut
 
-sub dump_module :register("output JSON for the MetaCPAN module info") {
+sub dump_module :register("output JSON for the MetaCPAN module info") () {
 	state $rc = require Mojo::JSON;
 	say Mojo::JSON::encode_json( _metacpan()->module( _main_module() )->{data} )
+	}
+
+sub dump_settings :register("output Makefile.PL settings as JSON" ) {
+	state $rc = require Mojo::JSON;
+	say Mojo::JSON::encode_json( _settings() )
 	}
 
 =item * gh_name
@@ -530,14 +565,27 @@ sub module :register("output the main module name") { say _main_module() }
 
 Use L<Distritbution::Cooker> to start a new module repository.
 
+The default name of the repo is the lowercased MODULE_NAME with C<::>
+translated to C<->.
+
+After creating the repo, C<new_module> changes into the directory
+and runs C<git init>.
+
 =cut
 
-sub new_module :register("make a new module directory") ( $module_name, $description, $repo_name ) {
+sub new_module :register("make a new module directory") ( $module_name, $description = undef, $repo_name = undef ) {
 	$description //= "Undescribed module $module_name";
-	$repo_name   //= sprintf 'https://github.com/%s/%s', _github_user(), lc($module_name) =~ s/::/-/gr;
+	$repo_name   //= lc($module_name) =~ s/::/-/gr;
 
 	state $rc = require Distribution::Cooker;
 	Distribution::Cooker->run( $module_name, $description, $repo_name );
+
+	$Config{path} = catfile( getcwd(), $repo_name );
+	_run_command( 'git', 'init' );
+	_run_git_command( 'add', '.' );
+	_run_git_command( 'commit', '-a', '-m', 'Initial creation with bmt' );
+
+	return 1;
 	}
 
 =item * null
@@ -628,26 +676,23 @@ Start a new module with NAME and DESCRIPTION. This is the same
 sequence as:
 
 	new_module
+	create_repos
+
+	push the all remote
 
 =cut
 
-sub start ( $name, $description = 'An undescribed module' ) {
+sub start :register("start a new module, set up git repos, push") ( $name, $description = 'An undescribed module' ) {
 	# make new module directory
-	new_module( $name, $description );
-
-	# set up git
+	die "Invalid Perl namespace <$name>!\n" unless _is_valid_package( $name );
+	my $repo_name = lc($name) =~ s/::/-/gr;
+	new_module( $name, $description, $repo_name );
 
 	# create github
+	create_repos( $repo_name, $description );
 
-	# push to github
-
-	# create bitbucket, gitlab
-
-	# set up all
-	all_remote();
-
-	# push to all
-
+	# push
+	_run_git_command( 'push', '-u', 'all', 'master' );
 	}
 
 =item * test
@@ -748,7 +793,7 @@ sub _appveyor_page ( @args ) {
 	}
 
 sub _bitbucket_page ( @args ) {
-	my $url = _fetch_url( 'bitbucket' );
+	my $url = _git_fetch_url( 'bitbucket' );
 	# git@bitbucket.org:briandfoy/mac-propertylist.git
 	$url =~ s|git\@bitbucket.org:|https://www.bitbucket.org/|;
 	$url;
@@ -825,16 +870,19 @@ for example).
 
 sub _dist_name () { _main_module() =~ s/::/-/gr }
 
-=item * _fetch_url( REMOTE_NAME )
+=item * _git_fetch_url( REMOTE_NAME )
 
 Get the fetch URL for the Git remote
 
 =cut
 
-sub _fetch_url ( $remote_name ) {
+sub _git_fetch_url ( $remote_name ) {
 	my $command = "git config remote.${remote_name}.url";
 	chomp( my $git_url = _capture_command( $command ) );
-	warn "No $remote_name remote!\n" unless $git_url;
+	unless( $git_url ) {
+		warn "No $remote_name remote!\n";
+		return;
+		}
 	$git_url;
 	}
 
@@ -896,9 +944,10 @@ Return the owner and repo name for this Github clone.
 =cut
 
 sub _github_owner_repo () {
-	my $url = _fetch_url( 'all' );
+	my $url = _settings()->{META_MERGE}{resources}{repository}{url};
+	say "_github_owner_repo: URL is $url";
 	die "No URL! Stopping!\n" unless $url;
-	my( $owner, $repo ) = $url =~ m|git\@github.com:(\S+?)/(\S+?)\.git|;
+	my( $owner, $repo ) = $url =~ m|https://github.com/(\S+?)/(\S+?)\.git|;
 	}
 
 sub _github_page ( $path = '',  @args ) {
@@ -926,7 +975,7 @@ sub _github_user_from_all {
 	}
 
 sub _gitlab_page ( @args ) {
-	my $url = _fetch_url( 'gitlab' );
+	my $url = _git_fetch_url( 'gitlab' );
 	# git@gitlab.com:briandfoy/mac-propertylist.git
 	$url =~ s|git\@gitlab.com:|https://www.gitlab.com/|;
 	$url;
@@ -950,6 +999,17 @@ sub _gitlab_user_from_all {
 	my( $line ) = _git_config_list( qr/^remote.all.pushurl=git\@gitlab.com:/ );
 	my( $user ) = $line =~ qr|git\@gitlab.com:(.+?)/|;
 	$user;
+	}
+
+=item * _is_valid_package( STRING )
+
+Returns true if STRING is a valid Perl namespace, and false otherwise.
+
+=cut
+
+sub _is_valid_package ( $package ) {
+	return 1 if $package =~ m/ \A [A-Z][A-Z0-9_]* (:: [A-Z][A-Z0-9_]* )* \z /xi;
+	return 0;
 	}
 
 =item * _latest_release_version
