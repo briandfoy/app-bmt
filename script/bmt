@@ -10,11 +10,14 @@ use lib qw(/Users/brian/Dev/ghojo/lib);
 use experimental qw(signatures);
 use B;
 
-use Antsy qw(:all);
 use Cwd qw(getcwd);
 use File::Basename;
+use File::Path qw(make_path);
 use File::Spec::Functions;
 use Module::CoreList;
+
+use Antsy qw(:all);
+use Mojo::UserAgent;
 use Mojo::Util qw(dumper trim);
 
 my %Commands;
@@ -43,20 +46,28 @@ a package name. I can use that to call methods in the modulino.
 
 =cut
 
-sub MODIFY_CODE_ATTRIBUTES ( $package, $code_ref, $attribute ) {
-	my( $sub_name )    = B::svref_2object( $code_ref )->GV->NAME;
+sub MODIFY_CODE_ATTRIBUTES ( $package, $code_ref, @attributes ) {
+	my( $sub_name ) = B::svref_2object( $code_ref )->GV->NAME;
 
-	my( $attribute_name ) = map { uc() } $attribute =~ m/\A(\w+)/;
+	my $success = 0;
+	foreach my $attribute ( @attributes ) {
+		my( $attribute_name ) = map { uc() } $attribute =~ m/\A(\w+)/;
+		no strict 'refs';
+		if( exists &{"ATTRIBUTE_$attribute_name"} ) { $success++ unless &{"ATTRIBUTE_$attribute_name"}( $package, $code_ref, $attribute ) }
+		else { die "Unknown attribute <$attribute_name> on <$sub_name>\n" }
+		}
 
-	no strict 'refs';
-	if( exists &{"ATTRIBUTE_$attribute_name"} ) { return &{"ATTRIBUTE_$attribute_name"}( @_ ) }
-	else { die "Unknown attribute <$attribute_name> on <$sub_name>\n" }
+	@attributes == $success ? () : 0;
 	}
 
 sub ATTRIBUTE_TRACE ( $package, $code_ref, $attribute ) {
-	my( $sub_name )    = B::svref_2object( $code_ref )->GV->NAME;
+	return unless $ENV{BMT_TRACE};
 
-	*{$sub_name} = sub ( @args ) {
+	my( $sub_name ) = B::svref_2object( $code_ref )->GV->NAME;
+
+	no strict 'refs';
+
+	*{"$sub_name"} = sub ( @args ) {
 		my @caller = caller(1);
 		say "Entering <$sub_name>";
 		my @return;
@@ -120,7 +131,7 @@ Open the GitHub actions page.
 
 =cut
 
-sub actions :register("open the actions Github page") { _browser( github('actions') ) }
+sub actions :register("open the actions Github page") :trace { _browser( _github_page('actions') ) }
 
 =item * all_remote
 
@@ -204,7 +215,7 @@ Open the main Appveyor page for this repo.
 
 =cut
 
-sub appveyor :register("open the Appveyor page")       { _browser( _appveyor_page() ) }
+sub appveyor :register("open the Appveyor page") { _browser( _appveyor_page() ) }
 
 =item * bitbucket
 
@@ -474,7 +485,7 @@ Open the GitHub main page for this repo.
 
 =cut
 
-sub github :register("open the main Github page") { _browser( github() ) }
+sub github :register("open the main Github page") { _browser( _github_page() ) }
 
 =item * gitlab
 
@@ -482,7 +493,7 @@ Open the Gitlab main page for this repo.
 
 =cut
 
-sub gitlab :register("open the main Gitlab page") { _browser( gitlab() ) }
+sub gitlab :register("open the main Gitlab page") { _browser( _gitlab_page() ) }
 
 =item * help
 
@@ -506,7 +517,7 @@ Open the GitHub issues page.
 
 =cut
 
-sub issues :register("open the Github issues page") { _browser( github( 'issues' ) ) }
+sub issues :register("open the Github issues page") { _browser( _github_page( 'issues' ) ) }
 
 =item * licenses
 
@@ -603,7 +614,7 @@ Open the Github, Gitlab, Bitbucket, and Appveyor pages all at once.
 =cut
 
 sub open_all :register("open Github, Gitlab, and Bitbucket in one go") ( @args ) {
-	_browser($_) for ( gitlab(), bitbucket(), github(), appveyor() );
+	_browser($_) for ( _gitlab_page(), _bitbucket_page(), _github_page(), _appveyor_page() );
 	}
 
 =item * perlv
@@ -642,7 +653,7 @@ Show the recent release history.
 =cut
 
 sub releases :register("show the recent release history") ( @args ) {
-	cpan_info();
+	cpanv();
 	print "\n";
 
 	my $releases = _releases();
@@ -651,7 +662,7 @@ sub releases :register("show the recent release history") ( @args ) {
 		state $count = 0;
 		next unless ref $release;
 		last if $count++ > 10;
-		printf "%15s   %-10s  %s\n", _cpan_testers($release->[0]), $release->@*;
+		printf "%15s   %-10s  %s\n", cpan_testers($release->[0]), $release->@*;
 		}
 	}
 
@@ -702,6 +713,62 @@ Run C<make test>.
 =cut
 
 sub test :register("run the tests") ( @args ) { _make("test") }
+
+=item * update_actions
+
+Grab the latest GitHub Actions from L<https://github.com/briandfoy/github_actions/>.
+
+=cut
+
+sub update_actions :register("update to latest github actions") {
+	state %file_map = (
+		'linux.yml'   => 'https://raw.githubusercontent.com/briandfoy/github_actions/master/perl-module-ubuntu.yml',
+		'macos.yml'   => 'https://raw.githubusercontent.com/briandfoy/github_actions/master/perl-module-macos.yml',
+		'windows.yml' => 'https://raw.githubusercontent.com/briandfoy/github_actions/master/perl-module-windows.yml',
+
+		'perl-module-ubuntu.yml'  => 'https://raw.githubusercontent.com/briandfoy/github_actions/master/perl-module-ubuntu.yml',
+		'perl-module-macos.yml'   => 'https://raw.githubusercontent.com/briandfoy/github_actions/master/perl-module-macos.yml',
+		'perl-module-windows.yml' => 'https://raw.githubusercontent.com/briandfoy/github_actions/master/perl-module-windows.yml',
+		);
+
+	my $workflow_dir = '.github/workflows';
+	unless( -d $workflow_dir ) {
+		make_path $workflow_dir;
+		foreach my $file ( qw(linux.yml macos.yml windows.yml) ) {
+			open my $fh, '>', catfile( $workflow_dir, $file ) or warn "Could not open <$file>: $!\n";
+			close $fh;
+			}
+		_run_git_command( 'add', $workflow_dir );
+		}
+
+	my @workflow_files = glob( "$workflow_dir/*.yml" );
+
+	foreach my $file ( @workflow_files ) {
+		my $basename = basename($file);
+		unless( exists $file_map{$basename} ) {
+			warn "<$file> does not have a mapping\n";
+			next;
+			}
+
+		say "\tSelecting <$file_map{$basename}> for <$file>";
+
+		Mojo::UserAgent->new->get( $file_map{$basename} )
+			->result->save_to($file);
+		}
+	}
+
+=item * update_actions
+
+Grab the latest GitHub Actions from L<https://github.com/briandfoy/github_actions/>.
+
+=cut
+
+sub update_appveyor :register("update to latest Appveyor config") {
+	my $url  = 'https://raw.githubusercontent.com/briandfoy/brians_perl_modules_appveyor_config/master/.appveyor.yml';
+	my $file = '.appveyor';
+
+	Mojo::UserAgent->new->get( $url )->result->save_to($file);
+	}
 
 =item * update_bmt
 
@@ -832,7 +899,7 @@ Open the URL in your browser
 
 =cut
 
-sub _browser ( $url ) {
+sub _browser :trace ( $url ) {
 	no strict 'refs';
 	my $handler = "_open_$^O";
 	die "No open handler for $^O" unless defined &{$handler};
@@ -945,7 +1012,6 @@ Return the owner and repo name for this Github clone.
 
 sub _github_owner_repo () {
 	my $url = _settings()->{META_MERGE}{resources}{repository}{url};
-	say "_github_owner_repo: URL is $url";
 	die "No URL! Stopping!\n" unless $url;
 	my( $owner, $repo ) = $url =~ m|https://github.com/(\S+?)/(\S+?)\.git|;
 	}
@@ -1099,7 +1165,7 @@ Open a URL in Safari
 
 =cut
 
-sub _open_darwin ( $url ) { system 'open', '-a', 'Safari', $url }
+sub _open_darwin :trace ( $url ) { system 'open', '-a', 'Safari', $url }
 
 =item * _releases
 
