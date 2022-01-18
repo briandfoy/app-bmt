@@ -1,6 +1,8 @@
 #!/Users/brian/bin/perl
 use v5.32;
 
+our $VERSION = '1.003';
+
 use App::bmt;
 
 package App::bmt;
