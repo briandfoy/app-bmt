@@ -112,7 +112,7 @@ sub run ( @args ) {
 		}
 
 	if( exists $Commands{$command} ) {
-		$Commands{$command}->[0]( @cmd_args );
+		say $Commands{$command}->[0]( @cmd_args );
 		}
 	else {
 		state $rc = require Text::Fuzzy;
@@ -217,7 +217,55 @@ Open the main Appveyor page for this repo.
 
 =cut
 
-sub appveyor :register("open the Appveyor page") { _browser( _appveyor_page() ) }
+sub appveyor :register("open the Appveyor page") {
+	state %Colors = (
+		success   => 'bg_green',
+		failure   => 'bg_red',
+		'default' => 'bg_cyan',
+		);
+
+	my $account = _appveyor_account();
+	my $repo = ( _github_owner_repo() )[-1];
+
+	state $url = sprintf "https://ci.appveyor.com/api/projects/%s/%s", $account, $repo;
+
+	require Mojo::UserAgent;
+	my $ua = Mojo::UserAgent->new;
+
+	my $tx = $ua->get(
+		$url =>
+		{ Authorization => "Bearer " . _appveyor_api_key() }
+		);
+
+	my $data = $tx->res->json;
+
+	my @jobs = grep defined, eval { $data->{build}{jobs}->@* };
+
+	my $string = join( "\n", $data->{build}->@{ qw(commitId message) } ) . "\n";
+	foreach my $job ( @jobs ) {
+		my $name = $job->{name} =~ s/\AImage:\s+//r;
+		my $status = do { no strict 'refs'; &{ $Colors{$job->{status} || 'default'} } . $job->{status} . reset() };
+		$string .= sprintf "%s: %s\n", $name, $status;
+		}
+
+	return $string;
+	}
+
+=item * appveyor_page
+
+Open the main Appveyor page for this repo.
+
+=cut
+
+sub appveyor_page :register("open the Appveyor page") { _browser( _appveyor_page() ) }
+
+=item * arguments
+
+=cut
+
+sub arguments :register("Show the arguments for WriteMakefile") {
+	dumper( _settings() );
+	}
 
 =item * bitbucket
 
@@ -226,6 +274,108 @@ Open the main Bitbucket page for this repo.
 =cut
 
 sub bitbucket :register("open the main Bitbucket page") { _browser( _bitbucket_page() ) }
+
+=item * cff
+
+Create or update a CITATION.cff file.
+
+https://github.com/citation-file-format/citation-file-format/blob/main/README.md
+
+=cut
+
+sub cff :register("create or update the CITATION.cff file") {
+	state $filename = 'CITATION.cff';
+	state $rc = require YAML::XS;
+
+	state %licenses = qw(
+		artistic2 Artistic-2.0
+		);
+
+	my $settings = _settings();
+
+	my $data = do {
+		-e $filename ? YAML::XS::LoadFile($filename) : {}
+		};
+
+	$data->{'cff-version'}     = '1.2.0';
+
+	($data->{'license'})       = grep {
+		defined
+		} ( $licenses{$settings->{LICENSE}}, $settings->{LICENSE} );
+	$data->{'repository-code'} = $settings->{META_MERGE}{resources}{homepage};
+	$data->{'date-released'}   = _latest_release_date();
+	$data->{'abstract'}        = _abstract_from();
+	$data->{'title'}           = sprintf "The %s Perl module", _main_module();
+	$data->{'version'}         = '' . _latest_release_version();
+
+	$data->{"license-url"}    = "$settings->{META_MERGE}{resources}{homepage}/LICENSE";
+
+	$data->{"type"} //= 'software';
+
+# repository-artifact
+
+	$data->{'authors'}         //= [ {
+		"family-names" => 'foy',
+		"given-names"  => 'brian d',
+		"orcid"        => _orc_id(),
+		"email"        => 'bdfoy@cpan.org',
+		"alias"        => "briandfoy"
+		}
+		];
+
+	$data->{message} //= 'The GitHub page for this module provides formatted citations';
+
+	my $yaml = YAML::XS::Dump($data);
+
+	my $header_comment = <<~"HERE";
+		# This CITATION.cff file was generated with $0
+		# @{[scalar localtime]}
+
+		HERE
+
+	$yaml =~ s/\A---\R/$header_comment/;
+	$yaml =~ s/\R+\z/\n/;
+	open my $fh, '>:encoding(UTF-8)', $filename or die "Could not open <$filename>: $!";
+	say {$fh} $yaml;
+	close $fh;
+
+	my $test_dir = 'xt';
+	my $test_file = catfile( $test_dir, 'citation.t' );
+	unless( -e $test_file ) {
+		make_path $test_dir unless -d $test_dir;
+
+		open my $fh, '>:encoding(UTF-8)', $test_file;
+		say {$fh} <<~"HERE";
+			# This $test_file file was generated with $0
+			# @{[scalar localtime]}
+
+			HERE
+
+		say {$fh} <<~'HERE';
+			use strict;
+
+			use Test::More;
+
+			my $file = 'CITATION.cff';
+
+			SKIP: {
+					my $rc = eval { require YAML; YAML->VERSION('1.26'); 1 };
+					skip "Need YAML to test $file", 1 unless $rc;
+
+					subtest citations => sub {
+							ok( -e $file, "$file exists" );
+							my $data = eval { YAML::LoadFile( $file ) };
+							my $error = $@;
+							ok( defined $data, "Loaded data from $file" ) or diag( "Error loading $file: $@" );
+							};
+					}
+
+			done_testing();
+			HERE
+		}
+
+	return "Created $filename";
+	}
 
 =item * complete [FILE]
 
@@ -255,7 +405,7 @@ sub complete :register("output a completion script for complete") ( $file = '~/.
 		HERE
 	close $fh;
 
-	print <<~"HERE" unless $file eq '-';
+	return <<~"HERE" unless $file eq '-';
 		# Add this to your .bash_profile:
 
 		BMT_COMPLETE=$file
@@ -297,7 +447,7 @@ sub cpanv :register("show the lastest CPAN version") ( @args ) {
 	my $date    = $module->{data}{date};
 	my $version = $module->{data}{version};
 
-	say "CPAN: @{[_main_module()]} $version ---> $date";
+	return "CPAN: @{[_main_module()]} $version ---> $date";
 	}
 
 =item * create_bb
@@ -346,12 +496,11 @@ sub create_github ( $name, $description = 'An undescribed module' ) {
 	my $ghojo = _ghojo();
 
 	my( $owner, $repo ) = _github_owner_repo();
- say "create_github: owner <$owner> repo <$repo>";
 
 	my $rc = $ghojo->create_repo( { name => $repo, description => $description } );
 
 	if( $rc->is_success ) {
-		say "Created repo <$name>";
+		return "Created repo <$name>";
 		}
 	else {
 		die "Counld not create repo <$name>: " . dumper($rc);
@@ -374,7 +523,7 @@ sub create_gitlab ( @args ) {
 		json => { name => $repo_name, visibility => 'public' }
 		);
 
-	say do {
+	return do {
 		if( $tx->result->is_success ) { "Created Gitlab repo <$repo_name>" }
 		else { "Could not create Gitlab repo\n" . $tx->res->to_string }
 		};
@@ -432,7 +581,7 @@ sub deps :register("show the dependency chain for this dist") {
 	say "Dependency count: " . keys $Seen->%*;
 	my $string = join " ", sort keys $Seen->%*;
 	$string =~ s/.{50,70}\K\s/\n/g;
-	say $string;
+	return $string;
 	}
 
 =item * dump_dist
@@ -446,7 +595,7 @@ Output as JSON the distribution information from MetaCPAN.
 
 sub dump_dist :register("output JSON for the MetaCPAN distribution info") {
 	state $rc = require Mojo::JSON;
-	say Mojo::JSON::encode_json( _metacpan()->release( _dist_name() )->{data} );
+	return Mojo::JSON::encode_json( _metacpan()->release( _dist_name() )->{data} );
 	}
 
 =item * dump_module
@@ -460,12 +609,26 @@ Output as JSON the module information from MetaCPAN.
 
 sub dump_module :register("output JSON for the MetaCPAN module info") () {
 	state $rc = require Mojo::JSON;
-	say Mojo::JSON::encode_json( _metacpan()->module( _main_module() )->{data} )
+	return Mojo::JSON::encode_json( _metacpan()->module( _main_module() )->{data} )
 	}
 
 sub dump_settings :register("output Makefile.PL settings as JSON" ) {
 	state $rc = require Mojo::JSON;
-	say Mojo::JSON::encode_json( _settings() )
+	return Mojo::JSON::encode_json( _settings() )
+	}
+
+=item * edit
+
+Open B<bmt> in an editor. I'm always adjusting this tool.
+
+This looks in BMT_EDITOR, then EDITOR. The default editor is B<bbedit>.
+My tool, my editor :)
+
+=cut
+
+sub edit :register("open bmt in a BMT_EDITOR or EDITOR") ( @args ) {
+	system $ENV{BMT_EDITOR} // $ENV{EDITOR} // 'bbedit', __FILE__;
+	return '';
 	}
 
 =item * gh_name
@@ -478,7 +641,7 @@ Output the GitHub repository name ("owner/repo")
 =cut
 
 sub gh_name :register("show the full_name of the Github repo") ( @args ) {
-	say join '/', _github_owner_repo();
+	return join '/', _github_owner_repo();
 	}
 
 =item *
@@ -508,7 +671,7 @@ sub help :register("show the help message") ( @args ) {
 	my( $longest ) = sort { length $b <=> length $a } keys %Commands;
 	my $length = length $longest;
 
-	say join "\n", map {
+	return join "\n", map {
 		sprintf "%-${length}s     %s", $_, $Commands{$_}->[1]
 		} sort keys %Commands;
 	}
@@ -554,8 +717,10 @@ sub licenses :register("list the licenses involved in dependencies") {
 			eval { $mcpan->release( $next->[1] )->{data}{dependency} } // [];
 		}
 
-	say "License count: " . keys $Licenses->%*;
-	say "Licenses: ", join " ", sort keys $Licenses->%*;
+	my $string = "License count: " . keys $Licenses->%*;
+	$string .= "Licenses: " .  join " ", sort keys $Licenses->%*;
+
+	return $string;
 	}
 
 =item * metacpan
@@ -572,7 +737,18 @@ Output the name of the main module.
 
 =cut
 
-sub module :register("output the main module name") { say _main_module() }
+sub module :register("output the main module name") { return _main_module() }
+
+=item * modulev
+
+Output the version of the main module.
+
+=cut
+
+sub modulev :register('output the main module version') {
+	return _version()
+	}
+
 
 =item * new_module MODULE_NAME DESCRIPTION REPO_NAME
 
@@ -598,7 +774,7 @@ sub new_module :register("make a new module directory") ( $module_name, $descrip
 	_run_git_command( 'add', '.' );
 	_run_git_command( 'commit', '-a', '-m', 'Initial creation with bmt' );
 
-	return 1;
+	return "Made $module_name";
 	}
 
 =item * null
@@ -642,7 +818,7 @@ sub perlv :register("show the declared Perl versions in various files") ( @args 
 
 	my $f_string = join "\n\t", map { "$files{$_} => $_" } sort keys %files;
 
-	say <<~"HERE";
+	return <<~"HERE";
 	Min version: $minv
 	Files:\n\t$f_string
 	HERE
@@ -655,8 +831,7 @@ Show the recent release history.
 =cut
 
 sub releases :register("show the recent release history") ( @args ) {
-	cpanv();
-	print "\n";
+	my $string = cpanv() . "\n";
 
 	my $releases = _releases();
 
@@ -664,8 +839,10 @@ sub releases :register("show the recent release history") ( @args ) {
 		state $count = 0;
 		next unless ref $release;
 		last if $count++ > 10;
-		printf "%15s   %-10s  %s\n", cpan_testers($release->[0]), $release->@*;
+		$string .= sprintf "%15s   %-10s  %s\n", cpan_testers($release->[0]), $release->@*;
 		}
+
+	return $string;
 	}
 
 =item * show_setup
@@ -675,12 +852,11 @@ Show the bmt setup.
 =cut
 
 sub show_setup :register("show what bmt thinks things are" ) {
-	printf <<~"HERE", _github_user(), _gitlab_user(), _bitbucket_user();
+	sprintf <<~"HERE", _github_user(), _gitlab_user(), _bitbucket_user();
 		Github user:    %s
 		Gitlab user:    %s
 		Bitbucket user: %s
 		HERE
-
 	}
 
 =item * start NAME DESCRIPTION
@@ -708,6 +884,35 @@ sub start :register("start a new module, set up git repos, push") ( $name, $desc
 	_run_git_command( 'push', '-u', 'all', 'master' );
 	}
 
+=item * summary
+
+Show a module summary with the different CI results and CPAN Testers
+
+=cut
+
+sub summary :register("show a module summary") (@args) {
+	my $release_date = _latest_release_date();
+	my $cpan_version = _latest_release_version();
+	my $name         = _main_module();
+
+	my $cpan_testers = cpan_testers();
+
+	my $github   = workflows() =~ s/^/\t/gmr;
+	my $appveyor = appveyor() =~ s/^/\t/gmr;
+
+	return <<~"HERE"
+	[$release_date] $cpan_version $name
+
+	CPAN Testers: $cpan_testers
+
+	GitHub:
+	$github
+	Appveyor:
+	$appveyor
+	HERE
+
+	}
+
 =item * test
 
 Run C<make test>.
@@ -727,16 +932,18 @@ sub update_actions :register("update to latest github actions") {
 		'linux.yml'   => 'https://raw.githubusercontent.com/briandfoy/github_actions/master/perl-module-ubuntu.yml',
 		'macos.yml'   => 'https://raw.githubusercontent.com/briandfoy/github_actions/master/perl-module-macos.yml',
 		'windows.yml' => 'https://raw.githubusercontent.com/briandfoy/github_actions/master/perl-module-windows.yml',
+		'release.yml' => 'https://raw.githubusercontent.com/briandfoy/github_actions/master/perl-module-release.yml',
 
 		'perl-module-ubuntu.yml'  => 'https://raw.githubusercontent.com/briandfoy/github_actions/master/perl-module-ubuntu.yml',
 		'perl-module-macos.yml'   => 'https://raw.githubusercontent.com/briandfoy/github_actions/master/perl-module-macos.yml',
 		'perl-module-windows.yml' => 'https://raw.githubusercontent.com/briandfoy/github_actions/master/perl-module-windows.yml',
+		'perl-module-release.yml' => 'https://raw.githubusercontent.com/briandfoy/github_actions/master/perl-module-release.yml',
 		);
 
 	my $workflow_dir = '.github/workflows';
 	unless( -d $workflow_dir ) {
 		make_path $workflow_dir;
-		foreach my $file ( qw(linux.yml macos.yml windows.yml) ) {
+		foreach my $file ( qw(linux.yml macos.yml windows.yml release.yml) ) {
 			open my $fh, '>', catfile( $workflow_dir, $file ) or warn "Could not open <$file>: $!\n";
 			close $fh;
 			}
@@ -757,6 +964,8 @@ sub update_actions :register("update to latest github actions") {
 		Mojo::UserAgent->new->get( $file_map{$basename} )
 			->result->save_to($file);
 		}
+
+	return '';
 	}
 
 =item * update_actions
@@ -770,6 +979,8 @@ sub update_appveyor :register("update to latest Appveyor config") {
 	my $file = '.appveyor';
 
 	Mojo::UserAgent->new->get( $url )->result->save_to($file);
+
+	return '';
 	}
 
 =item * update_bmt
@@ -818,16 +1029,15 @@ sub workflows :register("show the last set of workflows") ( @args ) {
 
 	my $result = _ghojo()->list_workflow_runs( _github_owner_repo() );
 	if( $result->is_error ) {
-		say "Error fetching workflows";
-		say $result->long_summary;
-		return;
+		die "Error fetching workflows\n" . $result->long_summary . "\n";
 		}
 
+	my $string;
 	foreach my $item ( $result->values->to_array->@* ) {
 		state $id = do {
 			my $id = $item->head_commit->id;
-			say "HEAD is $id";
-			say "Message: " . $item->head_commit->message;
+			$string .= "$id\n";
+			$string .= $item->head_commit->message . "\n";
 			$id;
 			};
 		last unless $id eq $item->head_commit->id;
@@ -838,8 +1048,10 @@ sub workflows :register("show the last set of workflows") ( @args ) {
 
 		$ex = do { no strict 'refs'; &{ $colors{$ex || 'default'} } . $ex . reset() };
 
-		printf "%-12s %-12s\n", $name, $ex;
+		$string .= sprintf "%-12s %-12s\n", $name, $ex;
 		}
+
+	return $string;
 	}
 
 =item * version
@@ -848,14 +1060,34 @@ Show the bmt version.
 
 =cut
 
-sub version :register("show the bmt version") { say basename($0) . " version " . App::bmt->VERSION . " using Perl " . $^V }
-
+sub version :register("show the bmt version") {
+	return basename($0) . " version " . App::bmt->VERSION . " using Perl " . $^V
+	}
 
 =head2 Mostly internal functions
 
 =over 4
 
 =cut
+
+sub _abstract_from ( $file = _settings()->{ABSTRACT_FROM} ) {
+	open my $fh, '<:encoding(UTF-8)', $file;
+
+	my $abstract;
+
+	while( <$fh> ) { last if /\A=head1 NAME/ }
+	while( <$fh> ) { next unless /\S/; chomp($abstract = $_); last; }
+
+	$abstract;
+	}
+
+sub _appveyor_account ( @args ) {
+	$ENV{APPVEYOR_ACCOUNT} // 'briandfoy';
+	}
+
+sub _appveyor_api_key ( @args ) {
+	$ENV{APPVEYOR_API_KEY};
+	}
 
 sub _appveyor_page ( @args ) {
 	sprintf "https://ci.appveyor.com/project/%s/%s", _github_owner_repo();
@@ -906,6 +1138,7 @@ sub _browser :trace ( $url ) {
 	my $handler = "_open_$^O";
 	die "No open handler for $^O" unless defined &{$handler};
 	&{$handler};
+	return '';
 	}
 
 =item * _capture_command( STRING )
@@ -1080,18 +1313,46 @@ sub _is_valid_package ( $package ) {
 	return 0;
 	}
 
+=item * _latest_release
+
+=cut
+
+sub _latest_release {
+	my @releases =
+		map { my @p = split; $p[-1] =~ s/.*release-//; \@p }
+		`git for-each-ref --format='%(committerdate:short) %(refname)' refs/tags`;
+	my %hash;
+	@hash{ qw( date version ) } = $releases[-1]->@*;
+	\%hash;
+	}
+
+=item * _latest_release_version
+
+Return the latest release date, in YYYY-MM-DD
+
+=cut
+
+sub _latest_release_date { _latest_release()->{date} }
+
 =item * _latest_release_version
 
 Return the latest release version
 
 =cut
 
-sub _latest_release_version { _releases()->[0][0] }
+sub _latest_release_version { _latest_release()->{version} }
 
 sub _license_for ( $dist ) {
 	state $Seen;
 	return $Seen->{$dist} if exists $Seen->{$dist};
 	$Seen->{$dist} = join ', ', _metacpan()->release($dist)->{data}{license}->@*;
+	}
+
+sub _line_from ( $file ) {
+	open my $fh, '<:encoding(UTF-8)', $file;
+	chomp( my $line = <$fh> );
+	say "LINE: $_";
+	return $line;
 	}
 
 =item * _main_module
@@ -1168,6 +1429,16 @@ Open a URL in Safari
 =cut
 
 sub _open_darwin :trace ( $url ) { system 'open', '-a', 'Safari', $url }
+
+=item _orc_id
+
+=cut
+
+sub _orc_id {
+	state $filename = catfile( $ENV{HOME}, '.orc_id' );
+	say "FILE: $filename";
+	_line_from($filename);
+	}
 
 =item * _releases
 
@@ -1261,6 +1532,17 @@ sub _ua {
 	state $rc = require Mojo::UserAgent;
 	state $ua = Mojo::UserAgent->new;
 	$ua
+	}
+
+=item * _version
+
+=cut
+
+sub _version {
+	state $rc = require Module::Extract::Version;
+	my $version_from = _settings()->{VERSION_FROM};
+
+	my $version = Module::Extract::VERSION->parse_version_safely( $version_from );
 	}
 
 =back
