@@ -136,7 +136,7 @@ Open the GitHub actions page.
 
 =cut
 
-sub actions :Register("open the actions Github page") :trace { _browser( _github_page('actions') ) }
+sub actions :Register("open the actions Github page") :Trace { _browser( _github_page('actions') ) }
 
 =item * all_remote
 
@@ -1136,7 +1136,7 @@ Open the URL in your browser
 
 =cut
 
-sub _browser :trace ( $url ) {
+sub _browser :Trace ( $url ) {
 	no strict 'refs';
 	my $handler = "_open_$^O";
 	die "No open handler for $^O" unless defined &{$handler};
@@ -1432,7 +1432,7 @@ Open a URL in Safari
 
 =cut
 
-sub _open_darwin :trace ( $url ) { system 'open', '-a', 'Safari', $url }
+sub _open_darwin :Trace ( $url ) { system 'open', '-a', 'Safari', $url }
 
 =item _orc_id
 
