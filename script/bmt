@@ -92,7 +92,7 @@ sub ATTRIBUTE_TRACE ( $package, $code_ref, $attribute ) {
 
 sub ATTRIBUTE_REGISTER ( $package, $code_ref, $attribute ) {
 	my( $sub_name )    = B::svref_2object( $code_ref )->GV->NAME;
-	my( $description ) = $attribute =~ m/ \A register \( \s* " ([^"]+) " \s* \) /x;
+	my( $description ) = $attribute =~ m/ \A Register \( \s* " ([^"]+) " \s* \) /ix;
 
 	$Commands{ $sub_name } = [ $code_ref, $description ];
 
