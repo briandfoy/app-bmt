@@ -671,11 +671,17 @@ when you do not specify a command.
 =cut
 
 sub help :Register("show the help message") ( @args ) {
-	my( $longest ) = sort { length $b <=> length $a } keys %Commands;
-	my $length = length $longest;
+	my sub colorize ( $command ) {
+		bold() . text_blue() . $_ . reset()
+		};
+
+	my( $longest ) = sort { length $b <=> length $a }
+		map { colorize($_) }
+		keys %Commands;
+	my $length = length $longest; # account for ANSI lengths
 
 	return join "\n", map {
-		sprintf "%-${length}s     %s", $_, $Commands{$_}->[1]
+		sprintf "  %-${length}s     %s", colorize($_), $Commands{$_}->[1]
 		} sort keys %Commands;
 	}
 
