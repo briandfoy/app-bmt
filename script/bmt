@@ -1,5 +1,6 @@
 #!/Users/brian/bin/perl
 use v5.32;
+use warnings;
 
 our $VERSION = '1.003';
 
@@ -135,7 +136,7 @@ Open the GitHub actions page.
 
 =cut
 
-sub actions :register("open the actions Github page") :trace { _browser( _github_page('actions') ) }
+sub actions :Register("open the actions Github page") :trace { _browser( _github_page('actions') ) }
 
 =item * all_remote
 
@@ -167,7 +168,7 @@ pushurls if all doesn't already have them.
 
 =cut
 
-sub all_remote :register("configure the all remote") ( @args ) {
+sub all_remote :Register("configure the all remote") ( @args ) {
 	my $url = _git_fetch_url( 'origin' ) // _git_fetch_url( 'all' );
 	say "all_remote: url: <$url>";
 
@@ -219,7 +220,7 @@ Open the main Appveyor page for this repo.
 
 =cut
 
-sub appveyor :register("open the Appveyor page") {
+sub appveyor :Register("open the Appveyor page") {
 	state %Colors = (
 		success   => 'bg_green',
 		failure   => 'bg_red',
@@ -259,13 +260,13 @@ Open the main Appveyor page for this repo.
 
 =cut
 
-sub appveyor_page :register("open the Appveyor page") { _browser( _appveyor_page() ) }
+sub appveyor_page :Register("open the Appveyor page") { _browser( _appveyor_page() ) }
 
 =item * arguments
 
 =cut
 
-sub arguments :register("Show the arguments for WriteMakefile") {
+sub arguments :Register("Show the arguments for WriteMakefile") {
 	dumper( _settings() );
 	}
 
@@ -275,7 +276,7 @@ Open the main Bitbucket page for this repo.
 
 =cut
 
-sub bitbucket :register("open the main Bitbucket page") { _browser( _bitbucket_page() ) }
+sub bitbucket :Register("open the main Bitbucket page") { _browser( _bitbucket_page() ) }
 
 =item * cff
 
@@ -285,7 +286,7 @@ https://github.com/citation-file-format/citation-file-format/blob/main/README.md
 
 =cut
 
-sub cff :register("create or update the CITATION.cff file") {
+sub cff :Register("create or update the CITATION.cff file") {
 	state $filename = 'CITATION.cff';
 	state $rc = require YAML::XS;
 
@@ -386,7 +387,7 @@ no file specified.
 
 =cut
 
-sub complete :register("output a completion script for complete") ( $file = '~/.bmt-complete' ) {
+sub complete :Register("output a completion script for complete") ( $file = '~/.bmt-complete' ) {
 	# https://iridakos.com/programming/2018/03/01/bash-programmable-completion-tutorial
 
 	my $fh;
@@ -423,7 +424,7 @@ Output the latest CPAN Testers results for this module.
 
 =cut
 
-sub cpan_testers :register("show Testers result for the latest version") ( $release = undef ) {
+sub cpan_testers :Register("show Testers result for the latest version") ( $release = undef ) {
 	$release //= _latest_release_version();
 	my $dist_name = _dist_name();
 	my $url = sprintf 'http://api.cpantesters.org/v3/summary/%s/%s', $dist_name, $release;
@@ -443,7 +444,7 @@ Output the latest CPAN version and release date.
 
 =cut
 
-sub cpanv :register("show the lastest CPAN version") ( @args ) {
+sub cpanv :Register("show the lastest CPAN version") ( @args ) {
 	my $module = _metacpan()->module( _main_module() );
 
 	my $date    = $module->{data}{date};
@@ -466,9 +467,9 @@ Create the Gitlab repo. This does not push the repo.
 
 =cut
 
-sub create_bb :register("create a BitBucket repo") { create_bitbucket() }
-sub create_gh :register("create a GitHub repo")    { create_github() }
-sub create_gl :register("create a GitLab repo")    { create_gitlab() }
+sub create_bb :Register("create a BitBucket repo") { create_bitbucket() }
+sub create_gh :Register("create a GitHub repo")    { create_github() }
+sub create_gl :Register("create a GitLab repo")    { create_gitlab() }
 
 sub create_bitbucket ( @args ) {
 	my $ua = _ua();
@@ -537,7 +538,7 @@ Create the GitHub, BitBucket, and Gitlab repos.
 
 =cut
 
-sub create_repos :register("create GitHub, Bitbucket, and Gitlab in one go") ( $repo_name, $description ) {
+sub create_repos :Register("create GitHub, Bitbucket, and Gitlab in one go") ( $repo_name, $description ) {
 	create_github( $repo_name, $description );
 	my $remote = sprintf 'git@github.com:%s/%s.git', _github_user(), $repo_name;
 	_run_git_command( 'remote', 'add', 'all', $remote );
@@ -555,7 +556,7 @@ Output the dependency chain.
 
 =cut
 
-sub deps :register("show the dependency chain for this dist") {
+sub deps :Register("show the dependency chain for this dist") {
 	my @queue = ( [ 0, _dist_name()] );
 	my $mcpan = _metacpan();
 
@@ -595,7 +596,7 @@ Output as JSON the distribution information from MetaCPAN.
 
 =cut
 
-sub dump_dist :register("output JSON for the MetaCPAN distribution info") {
+sub dump_dist :Register("output JSON for the MetaCPAN distribution info") {
 	state $rc = require Mojo::JSON;
 	return Mojo::JSON::encode_json( _metacpan()->release( _dist_name() )->{data} );
 	}
@@ -609,12 +610,12 @@ Output as JSON the module information from MetaCPAN.
 
 =cut
 
-sub dump_module :register("output JSON for the MetaCPAN module info") () {
+sub dump_module :Register("output JSON for the MetaCPAN module info") () {
 	state $rc = require Mojo::JSON;
 	return Mojo::JSON::encode_json( _metacpan()->module( _main_module() )->{data} )
 	}
 
-sub dump_settings :register("output Makefile.PL settings as JSON" ) {
+sub dump_settings :Register("output Makefile.PL settings as JSON" ) {
 	state $rc = require Mojo::JSON;
 	return Mojo::JSON::encode_json( _settings() )
 	}
@@ -628,7 +629,7 @@ My tool, my editor :)
 
 =cut
 
-sub edit :register("open bmt in a BMT_EDITOR or EDITOR") ( @args ) {
+sub edit :Register("open bmt in a BMT_EDITOR or EDITOR") ( @args ) {
 	system $ENV{BMT_EDITOR} // $ENV{EDITOR} // 'bbedit', __FILE__;
 	return '';
 	}
@@ -642,7 +643,7 @@ Output the GitHub repository name ("owner/repo")
 
 =cut
 
-sub gh_name :register("show the full_name of the Github repo") ( @args ) {
+sub gh_name :Register("show the full_name of the Github repo") ( @args ) {
 	return join '/', _github_owner_repo();
 	}
 
@@ -652,7 +653,7 @@ Open the GitHub main page for this repo.
 
 =cut
 
-sub github :register("open the main Github page") { _browser( _github_page() ) }
+sub github :Register("open the main Github page") { _browser( _github_page() ) }
 
 =item * gitlab
 
@@ -660,7 +661,7 @@ Open the Gitlab main page for this repo.
 
 =cut
 
-sub gitlab :register("open the main Gitlab page") { _browser( _gitlab_page() ) }
+sub gitlab :Register("open the main Gitlab page") { _browser( _gitlab_page() ) }
 
 =item * help
 
@@ -669,7 +670,7 @@ when you do not specify a command.
 
 =cut
 
-sub help :register("show the help message") ( @args ) {
+sub help :Register("show the help message") ( @args ) {
 	my( $longest ) = sort { length $b <=> length $a } keys %Commands;
 	my $length = length $longest;
 
@@ -684,7 +685,7 @@ Open the GitHub issues page.
 
 =cut
 
-sub issues :register("open the Github issues page") { _browser( _github_page( 'issues' ) ) }
+sub issues :Register("open the Github issues page") { _browser( _github_page( 'issues' ) ) }
 
 =item * licenses
 
@@ -692,7 +693,7 @@ List the licenses for all dependencies.
 
 =cut
 
-sub licenses :register("list the licenses involved in dependencies") {
+sub licenses :Register("list the licenses involved in dependencies") {
 	my @queue = ( [ 0, _dist_name()] );
 	my $mcpan = _metacpan();
 
@@ -731,7 +732,7 @@ Open the MetaCPAN page.
 
 =cut
 
-sub metacpan :register("open the MetaCPAN page")      { _browser( _metacpan_page() ) }
+sub metacpan :Register("open the MetaCPAN page")      { _browser( _metacpan_page() ) }
 
 =item * module
 
@@ -739,7 +740,7 @@ Output the name of the main module.
 
 =cut
 
-sub module :register("output the main module name") { return _main_module() }
+sub module :Register("output the main module name") { return _main_module() }
 
 =item * modulev
 
@@ -747,7 +748,7 @@ Output the version of the main module.
 
 =cut
 
-sub modulev :register('output the main module version') {
+sub modulev :Register('output the main module version') {
 	return _version()
 	}
 
@@ -764,7 +765,7 @@ and runs C<git init>.
 
 =cut
 
-sub new_module :register("make a new module directory") ( $module_name, $description = undef, $repo_name = undef ) {
+sub new_module :Register("make a new module directory") ( $module_name, $description = undef, $repo_name = undef ) {
 	$description //= "Undescribed module $module_name";
 	$repo_name   //= lc($module_name) =~ s/::/-/gr;
 
@@ -785,7 +786,7 @@ Do nothing.
 
 =cut
 
-sub null :register("do nothing") { 1 }
+sub null :Register("do nothing") { 1 }
 
 =item * open_all
 
@@ -793,7 +794,7 @@ Open the Github, Gitlab, Bitbucket, and Appveyor pages all at once.
 
 =cut
 
-sub open_all :register("open Github, Gitlab, and Bitbucket in one go") ( @args ) {
+sub open_all :Register("open Github, Gitlab, and Bitbucket in one go") ( @args ) {
 	_browser($_) for ( _gitlab_page(), _bitbucket_page(), _github_page(), _appveyor_page() );
 	}
 
@@ -803,7 +804,7 @@ Show the declared Perl versions in the Perl module files.
 
 =cut
 
-sub perlv :register("show the declared Perl versions in various files") ( @args ) {
+sub perlv :Register("show the declared Perl versions in various files") ( @args ) {
 	state $rc = require Module::Extract::DeclaredMinimumPerl;
 
 	my $minv = _settings()->{MIN_PERL_VERSION};
@@ -832,7 +833,7 @@ Show the recent release history.
 
 =cut
 
-sub releases :register("show the recent release history") ( @args ) {
+sub releases :Register("show the recent release history") ( @args ) {
 	my $string = cpanv() . "\n";
 
 	my $releases = _releases();
@@ -853,7 +854,7 @@ Show the bmt setup.
 
 =cut
 
-sub show_setup :register("show what bmt thinks things are" ) {
+sub show_setup :Register("show what bmt thinks things are" ) {
 	sprintf <<~"HERE", _github_user(), _gitlab_user(), _bitbucket_user();
 		Github user:    %s
 		Gitlab user:    %s
@@ -873,7 +874,7 @@ sequence as:
 
 =cut
 
-sub start :register("start a new module, set up git repos, push") ( $name, $description = 'An undescribed module' ) {
+sub start :Register("start a new module, set up git repos, push") ( $name, $description = 'An undescribed module' ) {
 	# make new module directory
 	die "Invalid Perl namespace <$name>!\n" unless _is_valid_package( $name );
 	my $repo_name = lc($name) =~ s/::/-/gr;
@@ -892,7 +893,7 @@ Show a module summary with the different CI results and CPAN Testers
 
 =cut
 
-sub summary :register("show a module summary") (@args) {
+sub summary :Register("show a module summary") (@args) {
 	my $release_date = _latest_release_date();
 	my $cpan_version = _latest_release_version();
 	my $name         = _main_module();
@@ -921,7 +922,7 @@ Run C<make test>.
 
 =cut
 
-sub test :register("run the tests") ( @args ) { _make("test") }
+sub test :Register("run the tests") ( @args ) { _make("test") }
 
 =item * update_actions
 
@@ -929,7 +930,7 @@ Grab the latest GitHub Actions from L<https://github.com/briandfoy/github_action
 
 =cut
 
-sub update_actions :register("update to latest github actions") {
+sub update_actions :Register("update to latest github actions") {
 	state %file_map = (
 		'linux.yml'   => 'https://raw.githubusercontent.com/briandfoy/github_actions/master/perl-module-ubuntu.yml',
 		'macos.yml'   => 'https://raw.githubusercontent.com/briandfoy/github_actions/master/perl-module-macos.yml',
@@ -976,7 +977,7 @@ Grab the latest GitHub Actions from L<https://github.com/briandfoy/github_action
 
 =cut
 
-sub update_appveyor :register("update to latest Appveyor config") {
+sub update_appveyor :Register("update to latest Appveyor config") {
 	my $url  = 'https://raw.githubusercontent.com/briandfoy/brians_perl_modules_appveyor_config/master/.appveyor.yml';
 	my $file = '.appveyor';
 
@@ -991,7 +992,7 @@ Install the lastest versions of the modules that bmt uses.
 
 =cut
 
-sub update_bmt :register("update the modules this tool needs") () {
+sub update_bmt :Register("update the modules this tool needs") () {
 	my @modules = do {
 		my @found;
 		open my $fh, '<:utf8', __FILE__
@@ -1019,7 +1020,7 @@ Show a summary of the most recent GitHub action workflows.
 
 =cut
 
-sub workflows :register("show the last set of workflows") ( @args ) {
+sub workflows :Register("show the last set of workflows") ( @args ) {
 	state %colors = (
 		completed   => 'bg_green',
 		queued      => 'bg_cyan',
@@ -1062,7 +1063,7 @@ Show the bmt version.
 
 =cut
 
-sub version :register("show the bmt version") {
+sub version :Register("show the bmt version") {
 	return basename($0) . " version " . App::bmt->VERSION . " using Perl " . $^V
 	}
 
