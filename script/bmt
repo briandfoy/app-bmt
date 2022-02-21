@@ -51,15 +51,17 @@ a package name. I can use that to call methods in the modulino.
 sub MODIFY_CODE_ATTRIBUTES ( $package, $code_ref, @attributes ) {
 	my( $sub_name ) = B::svref_2object( $code_ref )->GV->NAME;
 
-	my $success = 0;
+	my @bad_attributes = ();
 	foreach my $attribute ( @attributes ) {
 		my( $attribute_name ) = map { uc() } $attribute =~ m/\A(\w+)/;
 		no strict 'refs';
-		if( exists &{"ATTRIBUTE_$attribute_name"} ) { $success++ unless &{"ATTRIBUTE_$attribute_name"}( $package, $code_ref, $attribute ) }
-		else { die "Unknown attribute <$attribute_name> on <$sub_name>\n" }
+		if( exists &{"ATTRIBUTE_$attribute_name"} ) {
+			push @bad_attributes, $attribute if &{"ATTRIBUTE_$attribute_name"}( $package, $code_ref, $attribute )
+			}
+		else { push @bad_attributes, $attribute }
 		}
 
-	@attributes == $success ? () : 0;
+	@bad_attributes;
 	}
 
 sub ATTRIBUTE_TRACE ( $package, $code_ref, $attribute ) {
