@@ -1323,6 +1323,7 @@ sub _latest_release {
 	my @releases =
 		map { my @p = split; $p[-1] =~ s/.*release-//; \@p }
 		`git for-each-ref --format='%(committerdate:short) %(refname)' refs/tags`;
+	return {} unless @releases;
 	my %hash;
 	@hash{ qw( date version ) } = $releases[-1]->@*;
 	\%hash;
