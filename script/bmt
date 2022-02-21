@@ -754,7 +754,7 @@ Output the version of the main module.
 
 =cut
 
-sub modulev :Register('output the main module version') {
+sub modulev :Register("output the main module version") {
 	return _version()
 	}
 
