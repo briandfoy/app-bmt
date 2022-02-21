@@ -655,6 +655,20 @@ Open the GitHub main page for this repo.
 
 sub github :Register("open the main Github page") { _browser( _github_page() ) }
 
+=item * gitignore_template
+
+Download the F<.gitignore> template from github/gitignore
+
+=cut
+
+sub gitignore_template :Register("grab the gitignore template") {
+	state $url = 'https://raw.githubusercontent.com/github/gitignore/main/Perl.gitignore';
+
+	_ua()->get($url)->res->save_to( '.gitignore' );
+
+	"Fetched .gitignore template"
+	}
+
 =item * gitlab
 
 Open the Gitlab main page for this repo.
