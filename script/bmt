@@ -115,7 +115,8 @@ sub run ( @args ) {
 		}
 
 	if( exists $Commands{$command} ) {
-		say $Commands{$command}->[0]( @cmd_args );
+		my $output = $Commands{$command}->[0]( @cmd_args );
+		say $output unless 0 == length $output;
 		}
 	else {
 		state $rc = require Text::Fuzzy;
