@@ -999,7 +999,7 @@ Grab the latest GitHub Actions from L<https://github.com/briandfoy/github_action
 
 sub update_appveyor :Register("update to latest Appveyor config") {
 	my $url  = 'https://raw.githubusercontent.com/briandfoy/brians_perl_modules_appveyor_config/master/.appveyor.yml';
-	my $file = '.appveyor';
+	my $file = '.appveyor.yml';
 
 	Mojo::UserAgent->new->get( $url )->result->save_to($file);
 
