@@ -213,6 +213,8 @@ sub all_remote :Register("configure the all remote") ( @args ) {
 		}
 
 	_run_git_command( 'push', '-u', 'all', 'master' );
+
+	return 'Adding all remote';
 	}
 
 =item * appveyor
