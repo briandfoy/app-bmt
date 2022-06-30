@@ -314,7 +314,7 @@ sub cff :Register("create or update the CITATION.cff file") {
 	$data->{'title'}           = sprintf "The %s Perl module", _main_module();
 	$data->{'version'}         = '' . _latest_release_version();
 
-	$data->{"license-url"}    = "$settings->{META_MERGE}{resources}{homepage}/LICENSE";
+	$data->{"license-url"}    = "$settings->{META_MERGE}{resources}{homepage}/blob/master/LICENSE";
 
 	$data->{"type"} //= 'software';
 
