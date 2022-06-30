@@ -1173,7 +1173,7 @@ sub _browser :Trace ( $url ) {
 	no strict 'refs';
 	my $handler = "_open_$^O";
 	die "No open handler for $^O" unless defined &{$handler};
-	&{$handler};
+	&{$handler}($url);
 	return '';
 	}
 
