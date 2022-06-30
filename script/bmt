@@ -1090,6 +1090,16 @@ sub version :Register("show the bmt version") {
 	return basename($0) . " version " . App::bmt->VERSION . " using Perl " . $^V
 	}
 
+=item * zenodo
+
+Open the Zenodo page for this distribution
+
+=cut
+
+sub zenodo :Register("Open the Zenodo page") {
+	return _browser( _zenodo_page() )
+	}
+
 =head2 Mostly internal functions
 
 =over 4
@@ -1570,6 +1580,20 @@ sub _version {
 	my $version_from = _settings()->{VERSION_FROM};
 
 	my $version = Module::Extract::VERSION->parse_version_safely( $version_from );
+	}
+
+=itme * _zenodo_page
+
+Construct the Zenodo page URL from the repo owner and name
+
+=cut
+
+sub _zenodo_page {
+	# https://zenodo.org/account/settings/github/repository/briandfoy/mac-propertylist
+
+	my $url_template = 'https://zenodo.org/account/settings/github/repository/%s/%s';
+
+	sprintf $url_template, _github_owner_repo();
 	}
 
 =back
