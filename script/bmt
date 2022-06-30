@@ -1072,7 +1072,7 @@ sub workflows :Register("show the last set of workflows") ( @args ) {
 
 		my $ex = $status eq 'completed' ? $conclusion : $status;
 
-		$ex = do { no strict 'refs'; &{ $colors{$ex || 'default'} } . $ex . reset() };
+		$ex = do { no strict 'refs'; &{ $colors{$ex || 'default'} }() . $ex . reset() };
 
 		$string .= sprintf "%-12s %-12s\n", $name, $ex;
 		}
