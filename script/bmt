@@ -492,7 +492,7 @@ sub create_bitbucket ( @args ) {
 		json => { project => { key => $default_bitbucket_project } }
 		);
 
-	say do {
+	return do {
 		if( $tx->result->is_success ) { "Created Bitbucket repo <$user/$repo_name>" }
 		else { "Could not create Bitbucket repo\n" . $tx->res->to_string }
 		};
