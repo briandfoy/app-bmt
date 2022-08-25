@@ -994,9 +994,9 @@ sub update_workflows :Register("update to latest github workflows") {
 	return '';
 	}
 
-=item * update_actions
+=item * update_appveyor
 
-Grab the latest GitHub Actions from L<https://github.com/briandfoy/github_actions/>.
+Grab the latest GitHub Actions from L<https://github.com/briandfoy/brians_perl_modules_appveyor_config>.
 
 =cut
 
