@@ -955,15 +955,15 @@ Grab the latest GitHub Actions from L<https://github.com/briandfoy/github_action
 
 sub update_actions :Register("update to latest github actions") {
 	state %file_map = (
-		'linux.yml'   => 'https://raw.githubusercontent.com/briandfoy/github_actions/master/perl-module-ubuntu.yml',
-		'macos.yml'   => 'https://raw.githubusercontent.com/briandfoy/github_actions/master/perl-module-macos.yml',
-		'windows.yml' => 'https://raw.githubusercontent.com/briandfoy/github_actions/master/perl-module-windows.yml',
-		'release.yml' => 'https://raw.githubusercontent.com/briandfoy/github_actions/master/perl-module-release.yml',
+		'linux.yml'   => 'https://raw.githubusercontent.com/briandfoy/github_workflows/master/perl-module-ubuntu.yml',
+		'macos.yml'   => 'https://raw.githubusercontent.com/briandfoy/github_workflows/master/perl-module-macos.yml',
+		'windows.yml' => 'https://raw.githubusercontent.com/briandfoy/github_workflows/master/perl-module-windows.yml',
+		'release.yml' => 'https://raw.githubusercontent.com/briandfoy/github_workflows/master/perl-module-release.yml',
 
-		'perl-module-ubuntu.yml'  => 'https://raw.githubusercontent.com/briandfoy/github_actions/master/perl-module-ubuntu.yml',
-		'perl-module-macos.yml'   => 'https://raw.githubusercontent.com/briandfoy/github_actions/master/perl-module-macos.yml',
-		'perl-module-windows.yml' => 'https://raw.githubusercontent.com/briandfoy/github_actions/master/perl-module-windows.yml',
-		'perl-module-release.yml' => 'https://raw.githubusercontent.com/briandfoy/github_actions/master/perl-module-release.yml',
+		'perl-module-ubuntu.yml'  => 'https://raw.githubusercontent.com/briandfoy/github_workflows/master/perl-module-ubuntu.yml',
+		'perl-module-macos.yml'   => 'https://raw.githubusercontent.com/briandfoy/github_workflows/master/perl-module-macos.yml',
+		'perl-module-windows.yml' => 'https://raw.githubusercontent.com/briandfoy/github_workflows/master/perl-module-windows.yml',
+		'perl-module-release.yml' => 'https://raw.githubusercontent.com/briandfoy/github_workflows/master/perl-module-release.yml',
 		);
 
 	my $workflow_dir = '.github/workflows';
