@@ -949,11 +949,11 @@ sub test :Register("run the tests") ( @args ) { _make("test") }
 
 =item * update_actions
 
-Grab the latest GitHub Actions from L<https://github.com/briandfoy/github_actions/>.
+Grab the latest GitHub Actions from L<https://github.com/briandfoy/github_workflows/>.
 
 =cut
 
-sub update_actions :Register("update to latest github actions") {
+sub update_workflows :Register("update to latest github workflows") {
 	state %file_map = (
 		'linux.yml'   => 'https://raw.githubusercontent.com/briandfoy/github_workflows/master/perl-module-ubuntu.yml',
 		'macos.yml'   => 'https://raw.githubusercontent.com/briandfoy/github_workflows/master/perl-module-macos.yml',
