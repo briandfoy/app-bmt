@@ -139,6 +139,50 @@ Open the GitHub actions page.
 
 sub actions :Register("open the actions Github page") :Trace { _browser( _github_page('actions') ) }
 
+=item * adjust_linux_workflow
+
+Adjust the GitHub linux workflow:
+
+	* Remove Perl versions that should be there
+
+=cut
+
+sub _linux_workflow { '.github/workflows/linux.yml' }
+sub adjust_linux_workflow :Register("adjust linux workflow perl versions") {
+	state $rc = require YAML::XS;
+	my $target = _linux_workflow();
+	my $yaml = YAML::XS::LoadFile( $target );
+
+	my $arguments = _settings();
+	my $min_version = $arguments->{MIN_PERL_VERSION};
+	$min_version = '5.014' if $min_version eq '5.014001';
+	$min_version = '5.008' if $min_version eq '5.008005';
+	my $min_version_s = $min_version =~ s/5\.\K0+//r;
+	$min_version_s = '5.08' if $min_version eq '5.008';
+	say "\tmin version: $min_version -> $min_version_s";
+
+	my @versions = $yaml->{jobs}{perl}{strategy}{matrix}{'perl-version'}->@*;
+
+	my @should_remove = grep { $_ < $min_version_s } grep { /\A5/ } @versions;
+	unshift @should_remove, '5.8' unless $min_version eq '5.008';
+
+	say "\tfound versions: @versions";
+	say "\tshould remove: @should_remove";
+	next unless @should_remove;
+
+	my $alternation = join '|', @should_remove;
+	$alternation =~ s/\./\\./g;
+	my $regex = qr/^\h+-\h+'($alternation)'\R/m;
+
+	my $data = do { local( @ARGV, $/ ) = ($target); <> };
+
+	my $subs = $data =~ s/$regex//g;
+
+	open my $fh, '>:encoding(UTF-8)', $target;
+	print { $fh } $data;
+	close $fh;
+	}
+
 =item * all_remote
 
 I like to have my repos stored on multiple services so I can tolerate
@@ -990,6 +1034,8 @@ sub update_workflows :Register("update to latest github workflows") {
 		Mojo::UserAgent->new->get( $file_map{$basename} )
 			->result->save_to($file);
 		}
+
+	adjust_linux_workflow();
 
 	return '';
 	}
