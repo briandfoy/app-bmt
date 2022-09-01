@@ -33,10 +33,20 @@ bmt - brian's module tool
 
 	% bmt COMMAND
 
+To see the commands:
+
+	% bmt
+	% bmt help
+
+To get command completion
+
+	% bmt complete
+
 =head1 DESCRIPTION
 
 I use this to manage my work in Perl modules. It's very particular to
-how I do things.
+how I do things. I change it frequently as I figure out how to do things
+better. I don't support anything earlier than the latest commit.
 
 First, my F<Makefile.PL>'s are modulinos. They construct their argument
 lists to C<WriteMakefile> but don't actually do anything unless it's
@@ -45,7 +55,8 @@ without the program doing its work. I can then inspect that data structure.
 
 Second, the modulino uses the package name of the main module and return
 that package name. As such, when I C<require './Makefile'>, I get back
-a package name. I can use that to call methods in the modulino.
+a package name. I can use that to call methods in the modulino so I can
+access any info I need.
 
 =cut
 
@@ -128,8 +139,7 @@ sub run ( @args ) {
 
 =head2 Commands
 
-=cut
-
+=over 4
 
 =item * actions
 
@@ -143,7 +153,7 @@ sub actions :Register("open the actions Github page") :Trace { _browser( _github
 
 Adjust the AppVeyor config for the minimum Perl configuration. The
 Ubuntu1804 image has v5.26 and the Ubuntu2004 image has v5.30. So far
-there isn't a Ubuntu2204, but that has v5.34.
+there isn't a Ubuntu2204, but that will have v5.34.
 
 This removes the images that we can't use.
 
@@ -174,7 +184,7 @@ sub adjust_appveyor :Register("adjust AppVeyor config for min Perl versions") {
 
 Adjust the GitHub linux workflow:
 
-	* Remove Perl versions that should be there
+	* Remove Perl versions that should not be there based on the minimum Perl version
 
 =cut
 
@@ -1676,8 +1686,6 @@ sub _zenodo_page {
 	}
 
 =back
-
-=cut
 
 =head1 COPYRIGHT
 
