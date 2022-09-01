@@ -199,7 +199,7 @@ sub adjust_linux_workflow :Register("adjust linux workflow perl versions") {
 
 	say "\tfound versions: @versions";
 	say "\tshould remove: @should_remove";
-	next unless @should_remove;
+	return unless @should_remove;
 
 	my $alternation = join '|', @should_remove;
 	$alternation =~ s/\./\\./g;
