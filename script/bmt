@@ -139,6 +139,37 @@ Open the GitHub actions page.
 
 sub actions :Register("open the actions Github page") :Trace { _browser( _github_page('actions') ) }
 
+=item * adjust_appveyor
+
+Adjust the AppVeyor config for the minimum Perl configuration. The
+Ubuntu1804 image has v5.26 and the Ubuntu2004 image has v5.30. So far
+there isn't a Ubuntu2204, but that has v5.34.
+
+This removes the images that we can't use.
+
+=cut
+
+sub _appveyor_file { '.appveyor.yml' }
+sub adjust_appveyor :Register("adjust AppVeyor config for min Perl versions") {
+	state $rc = require YAML::XS;
+
+	my $arguments = _settings();
+	my $min = substr( $arguments->{MIN_PERL_VERSION}, 0, 5 );
+	return unless $min gt '5.026';
+
+	my $target = _appveyor_file();
+	my $data = do { local( @ARGV, $/ ) = ($target); <> };
+	$data =~ s/^\h+Ubuntu1804\h*\R// if $min gt '5.026';
+	$data =~ s/^\h+Ubuntu2004\h*\R// if $min gt '5.030';
+	$data =~ s/^\h+Ubuntu2204\h*\R// if $min gt '5.034';
+
+	open my $fh, '>:encoding(UTF-8)', $target;
+	print { $fh } $data;
+	close $fh;
+
+	return "";
+	}
+
 =item * adjust_linux_workflow
 
 Adjust the GitHub linux workflow:
@@ -1047,7 +1078,7 @@ Grab the latest GitHub Actions from L<https://github.com/briandfoy/brians_perl_m
 =cut
 
 sub update_appveyor :Register("update to latest Appveyor config") {
-	my $url  = 'https://raw.githubusercontent.com/briandfoy/brians_perl_modules_appveyor_config/master/.appveyor.yml';
+	my $url  = 'https://raw.githubusercontent.com/briandfoy/brians_perl_modules_appveyor_config/master/perl-appveyor.yml';
 	my $file = '.appveyor.yml';
 
 	Mojo::UserAgent->new->get( $url )->result->save_to($file);
