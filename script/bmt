@@ -212,6 +212,8 @@ sub adjust_linux_workflow :Register("adjust linux workflow perl versions") {
 	open my $fh, '>:encoding(UTF-8)', $target;
 	print { $fh } $data;
 	close $fh;
+
+	return "";
 	}
 
 =item * all_remote
