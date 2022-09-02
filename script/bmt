@@ -1372,6 +1372,10 @@ Return the owner and repo name for this Github clone.
 
 sub _github_owner_repo () {
 	my $url = _settings()->{META_MERGE}{resources}{repository}{url};
+	if( $url =~ /\.git\z/ ) {
+		warn "URL ends in .git! Adjusting $url\n";
+		$url =~ s/\.git\z//;
+		}
 	die "No URL! Stopping!\n" unless $url;
 	my( $owner, $repo ) = $url =~ m|https://github.com/(\S+?)/(\S+)(\.git)?|;
 	}
