@@ -567,9 +567,10 @@ sub create_bitbucket ( @args ) {
 	my( $owner, $repo_name ) = _github_owner_repo();
 
 	my $user = _bitbucket_user();
+	my $adjusted_repo = lc($repo_name) =~ s/[:-]+/-/gr;
 	my $url = sprintf 'https://%s:%s@api.bitbucket.org/2.0/repositories/%s/%s',
 		$user, _bitbucket_app_password(),
-		$user, $repo_name;
+		$user, $adjusted_repo;
 
 	my $default_bitbucket_project = 'PROJ';
 
@@ -580,7 +581,7 @@ sub create_bitbucket ( @args ) {
 		);
 
 	return do {
-		if( $tx->result->is_success ) { "Created Bitbucket repo <$user/$repo_name>" }
+		if( $tx->result->is_success ) { "Created Bitbucket repo <$user/$adjusted_repo>" }
 		else { "Could not create Bitbucket repo\n" . $tx->res->to_string }
 		};
 	}
