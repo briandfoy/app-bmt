@@ -75,4 +75,4 @@ App-
 \A\.github\b
 
 \.gitattributes\b
-App-*
+App-.*
