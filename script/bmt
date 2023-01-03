@@ -779,7 +779,7 @@ sub gh_name :Register("show the full_name of the Github repo") ( @args ) {
 	return join '/', _github_owner_repo();
 	}
 
-=item *
+=item * github
 
 Open the GitHub main page for this repo.
 
