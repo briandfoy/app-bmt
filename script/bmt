@@ -25,6 +25,11 @@ use Mojo::Util qw(dumper trim);
 
 my %Commands;
 
+use constant EX_SUCCESS          => 0;
+use constant EX_ERROR            => 1;
+use constant EX_USAGE            => 2;
+use constant EX_COMMAND_DISABLED => 4;
+
 =head1 NAME
 
 bmt - brian's module tool
@@ -57,6 +62,34 @@ Second, the modulino uses the package name of the main module and return
 that package name. As such, when I C<require './Makefile'>, I get back
 a package name. I can use that to call methods in the modulino so I can
 access any info I need.
+
+=head2 Configuration
+
+B<bmt> looks at F<~/.bmt> and F<./.bmt> for JSON structures that
+represent the config. The structures in these two files are combined,
+with F<./.bmt> shadowing values in F<~/.bmt>:
+
+In the per-user file F<~/.bmt> are things that most likely apply to
+every repo:
+
+	{
+	"github_user": "briandfoy",
+	"gitlab_user": "briandfoy",
+	"bitbucket_user": "briandfoy",
+	"cpan_user": "bdfoy"
+	}
+
+In the repo file F<./.bmt> are settings for the local repo. So far,
+that's the C<disabled> object to block certain commands. The key
+is the command and the value is the reason it is blocked. When you try
+to run this command, B<bmt> will catch it and exit with 4 without
+doing anything:
+
+	{
+	"disabled": {
+			"update_workflows": "Task modules don't have the usual workflow"
+			}
+	}
 
 =cut
 
@@ -114,18 +147,25 @@ my %Config;
 
 run( @ARGV ) unless caller;
 
+sub _disabled( $command ) { eval { $Config{disabled}{$command} } };
+
 sub run ( @args ) {
 	my( $command, @cmd_args ) = @args;
 	$command //= 'help';
 
-	my $config_file = catfile( $ENV{HOME}, '.bmt' );
-	if( -e $config_file ) {
+	foreach my $config_file ( catfile( $ENV{HOME}, '.bmt' ), '.bmt' ) {
+		next unless -e $config_file;
 		state $rc = require Mojo::File;
 		state $rc2 = require Mojo::JSON;
-		%Config = Mojo::JSON::decode_json( Mojo::File->new( $config_file )->slurp )->%*;
+		my %this = Mojo::JSON::decode_json( Mojo::File->new( $config_file )->slurp )->%*;
+		%Config = ( %Config, %this ); # yuck, but quick
 		}
 
-	if( exists $Commands{$command} ) {
+	if( my $message = _disabled( $command ) ) {
+		say STDERR "Command <$command> is disabled for this repo:\n\t$message";
+		exit EX_COMMAND_DISABLED;
+		}
+	elsif( exists $Commands{$command} ) {
 		my $output = $Commands{$command}->[0]( @cmd_args );
 		say $output unless 0 == length $output;
 		}
@@ -134,6 +174,7 @@ sub run ( @args ) {
 		my $tf = Text::Fuzzy->new($command);
 		my $nearest = $tf->nearestv( [ keys %Commands ] );
 		say STDERR "Command <$command> wasn't found; perhaps you meant <$nearest>?\nSee `$0 help`";
+		exit EX_USAGE;
 		}
 	}
 
@@ -957,6 +998,16 @@ sub releases :Register("show the recent release history") ( @args ) {
 		}
 
 	return $string;
+	}
+
+=item * show_config
+
+Show the bmt config.
+
+=cut
+
+sub show_config :Register("show the bmt configuration" ) {
+	return dumper( \%Config );
 	}
 
 =item * show_setup
