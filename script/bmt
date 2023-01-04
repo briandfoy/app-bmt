@@ -787,6 +787,71 @@ Open the GitHub main page for this repo.
 
 sub github :Register("open the main Github page") { _browser( _github_page() ) }
 
+=item * github_labels
+
+Create the basic labels for GitHub issues.
+
+=cut
+
+# https://medium.com/@dave_lunny/sane-github-labels-c5d2e6004b63
+
+sub _labels {
+	state %type_labels = (
+		_meta => {
+			prefix => 'Type',
+			},
+		enhancement     => ['5F00FF', 'improve a feature that already exists'],
+		feature_request => ['5F00FF', 'add a feature that does not exist'],
+		bug             => ['FF0000', 'an existing feature does not work'],
+		documentation   => ['D700FF', 'fix the docs'],
+		);
+
+	state %status_labels = (
+		_meta => {
+			prefix => 'Status:',
+			},
+		needs_verification => ['AFFF00', 'issue needs to be verified'],
+		needs_help      => ['00FF00', 'needs outside expertise or capacity'],
+		stalled         => ['CCCCCC', 'something is blocking progress'],
+		needs_feedback  => ['AFFF00', 'requestor or community feedback needed to go on'],
+		needs_testing   => ['AFFF00', 'the fix needs to be tested'],
+		accepted        => ['00FF00', 'the fix is accepted'],
+		needs_docs      => ['AFFF00', 'the change needs to be documented'],
+		rejected        => ['d7ffd7', 'this change is rejected'],
+		"can't reproduce" => ['d7ffd7', 'this change is rejected'],
+		);
+
+
+	state %priority_labels = (
+		_meta => {
+			prefix => 'Priority',
+			},
+		critical        => ['FF0000', 'fix immediately'],
+		high            => ['FF4500', 'work on this first'],
+		low             => ['FFFF00', 'get to this whenever'],
+		backlog         => ['00FFFF', 'not working on this, unless someone else wants to'],
+		);
+
+	use experimental qw(refaliasing);
+	my @labels;
+	foreach \my %h ( \%type_labels, \%status_labels ) {
+		my $meta = $h{_meta};
+		while( my( $name, $desc ) = each %h ) {
+			$name =~ s/_/ /g;
+			push @labels, { name => $name , description => $desc, color => $meta->{color} };
+			}
+		}
+
+	return \@labels;
+	}
+
+sub github_labels :Register("create the GitHub labels") {
+	state @labels = _labels();
+
+	say dumper( \@labels );
+
+	}
+
 =item * gitignore_template
 
 Download the F<.gitignore> template from github/gitignore
@@ -1186,12 +1251,13 @@ Show a summary of the most recent GitHub action workflows.
 
 sub workflows :Register("show the last set of workflows") ( @args ) {
 	state %colors = (
-		completed   => 'bg_green',
-		queued      => 'bg_cyan',
-		in_progress => 'bg_yellow',
-		success     => 'bg_green',
-		failure     => 'bg_red',
-		default     => 'bg_cyan',
+		completed   => \&bg_green,
+		cancelled   => sub { bg_rgb(210, 180, 140) },
+		queued      => \&bg_cyan,
+		in_progress => \&bg_yellow,
+		success     => \&bg_green,
+		failure     => \&bg_red,
+		default     => \&bg_cyan,
 		);
 
 	my $result = _ghojo()->list_workflow_runs( _github_owner_repo() );
@@ -1212,8 +1278,9 @@ sub workflows :Register("show the last set of workflows") ( @args ) {
 			map( { $item->{$_} // '' } qw(name status conclusion) );
 
 		my $ex = $status eq 'completed' ? $conclusion : $status;
+		my $color = $colors{$ex} // $colors{'default'};
 
-		$ex = do { no strict 'refs'; &{ $colors{$ex || 'default'} }() . $ex . reset() };
+		$ex = do { no strict 'refs'; $color->() . $ex . reset() };
 
 		$string .= sprintf "%-12s %-12s\n", $name, $ex;
 		}
