@@ -795,7 +795,7 @@ Create the basic labels for GitHub issues.
 
 # https://medium.com/@dave_lunny/sane-github-labels-c5d2e6004b63
 
-sub _labels {
+sub _labels_set {
 	state %type_labels = (
 		_meta => {
 			prefix => 'Type',
@@ -804,11 +804,12 @@ sub _labels {
 		feature_request => ['5F00FF', 'add a feature that does not exist'],
 		bug             => ['FF0000', 'an existing feature does not work'],
 		documentation   => ['D700FF', 'fix the docs'],
+		question        => ['D700FF', 'clarify something']
 		);
 
 	state %status_labels = (
 		_meta => {
-			prefix => 'Status:',
+			prefix => 'Status',
 			},
 		needs_verification => ['AFFF00', 'issue needs to be verified'],
 		needs_help      => ['00FF00', 'needs outside expertise or capacity'],
@@ -818,6 +819,7 @@ sub _labels {
 		accepted        => ['00FF00', 'the fix is accepted'],
 		needs_docs      => ['AFFF00', 'the change needs to be documented'],
 		rejected        => ['d7ffd7', 'this change is rejected'],
+		duplicate       => ['CCCCCC', 'this issue is already an issue'],
 		"can't reproduce" => ['d7ffd7', 'this change is rejected'],
 		);
 
@@ -829,27 +831,129 @@ sub _labels {
 		critical        => ['FF0000', 'fix immediately'],
 		high            => ['FF4500', 'work on this first'],
 		low             => ['FFFF00', 'get to this whenever'],
-		backlog         => ['00FFFF', 'not working on this, unless someone else wants to'],
+		backlog         => ['CCCCCC', 'not working on this, unless someone else wants to'],
 		);
 
 	use experimental qw(refaliasing);
 	my @labels;
-	foreach \my %h ( \%type_labels, \%status_labels ) {
+	foreach \my %h ( \%type_labels, \%status_labels, \%priority_labels ) {
 		my $meta = $h{_meta};
-		while( my( $name, $desc ) = each %h ) {
+		while( my( $name, $tuple ) = each %h ) {
+			next if $name =~ m/\A_/;
 			$name =~ s/_/ /g;
-			push @labels, { name => $name , description => $desc, color => $meta->{color} };
+			push @labels, { name => "$meta->{prefix}: $name", description => $tuple->[1], color => $tuple->[0] };
 			}
 		}
 
 	return \@labels;
 	}
 
-sub github_labels :Register("create the GitHub labels") {
-	state @labels = _labels();
+sub _get_labels {
+	my $result = _ghojo()->labels( _github_owner_repo() );
+	if( $result->is_error ) {
+		warn "Error fetching labels\n" . $result->long_summary . "\n";
+		return ();
+		}
 
-	say dumper( \@labels );
+	$result->values->to_array->@*;
+	}
 
+sub show_github_labels :Register("show the current GitHub labels") {
+	foreach my $label ( sort { lc($a->{name}) cmp lc($b->{name}) } _get_labels() ) {
+		my( $r, $g, $b ) = map { hex($_) } $label->color =~ m/(..)(..)(..)/;
+		say bg_rgb($r, $b, $g ), "   ", reset(), " ", $label->name, " - ", $label->description // '';
+		}
+	}
+
+sub update_github_labels :Register("create the GitHub labels") {
+	state $labels_set = _labels_set();
+	state %labels_to_delete = map { $_ => 1 } (
+		'CPAN Pull Request Challenge',
+		);
+	state %labels_to_translate = (
+		'wontfix'     => "rejected",
+		'help wanted' => 'needs help',
+		'invalid'     => 'rejected',
+		);
+
+	my %counts;
+	foreach my $label ( sort { lc($a->{name}) cmp lc($b->{name}) } _get_labels() ) {
+		my $name = $label->name;
+		say "Looking at existing label <$name>";
+		if( exists $labels_to_delete{ $name } ) {
+			say "Label <$name> should be deleted";
+			_ghojo()->delete_label( _github_owner_repo(), $name );
+			$counts{'changed'}++;
+			}
+		if( exists $labels_to_translate{ $label->name } ) {
+			say "Label <$name> should be translated";
+			my $args = { name => $labels_to_translate{ $name }, color => $label->color, description => $label->description };
+			_ghojo()->update_label( _github_owner_repo(), $name, $args );
+			$counts{'translated'}++;
+			}
+		}
+
+	# say dumper($labels_set);
+	my %labels_now = map { $_->{name}, $_ } _get_labels();
+
+	my @errors;
+	foreach my $label_to_set ( $labels_set->@* ) {
+		my $set_name = $label_to_set->{name};
+		my $unprefixed_name = $set_name =~ s/.*:\s+//r;
+
+		my @exists = grep { exists $labels_now{$_} } ( $set_name, $unprefixed_name );
+		my $result = do {
+			if( @exists ) {
+				say "Label <$exists[0]> exists: update";
+				if( labels_are_the_same( $label_to_set, $labels_now{$exists[0]} ) ) {
+					say "\tThere is no change for <$exists[0]>";
+					$counts{'skipped'}++
+					}
+				else {
+					_ghojo()->update_label( _github_owner_repo(), $exists[0], $label_to_set );
+					$counts{'updated'}++;
+					}
+				}
+			else {
+				say "Label <$set_name> does not exist: create";
+				_ghojo()->create_label( _github_owner_repo(), $label_to_set );
+				$counts{'created'}++;
+				}
+			};
+
+		$result = Ghojo::Result->success;
+		say "\t" . do {
+			if( $result->is_success ) {
+				"Label <$label_to_set->{name}> updated / created";
+				}
+			else {
+				push @errors, $result;
+				"Problem with <$label_to_set->{name}>";
+				}
+			};
+		}
+
+	say "There were " . @errors . " errors";
+	say "Summary: " . dumper(\%counts);
+	return "Labels updated";
+	}
+
+sub labels_are_the_same ( $candidate, $existing ) {
+	state @keys = qw(name description color);
+	if( $existing isa 'Ghojo::Label' ) {
+		$existing = { map { $_, $existing->$_() } @keys };
+		}
+
+	my $first_dump = dumper($candidate) =~ s/^/\t/gmr;
+	my $second_dump = dumper($existing) =~ s/^/\t/gmr;
+
+#	say $first_dump, $second_dump;
+
+	foreach my $key ( @keys ) {
+		return 0 unless $candidate->{$key} eq $existing->{$key}
+		}
+
+	return 1;
 	}
 
 =item * gitignore_template
