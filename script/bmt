@@ -803,6 +803,8 @@ sub _labels_set {
 		enhancement     => ['5F00FF', 'improve a feature that already exists'],
 		feature_request => ['5F00FF', 'add a feature that does not exist'],
 		bug             => ['FF0000', 'an existing feature does not work'],
+		'test bug'      => ['FF0000', 'an existing test is broken'],
+		'test failure'  => ['FF0000', 'an existing (working) test is failing'],
 		documentation   => ['D700FF', 'fix the docs'],
 		question        => ['D700FF', 'clarify something']
 		);
@@ -811,16 +813,20 @@ sub _labels_set {
 		_meta => {
 			prefix => 'Status',
 			},
-		needs_verification => ['AFFF00', 'issue needs to be verified'],
-		needs_help      => ['00FF00', 'needs outside expertise or capacity'],
-		stalled         => ['CCCCCC', 'something is blocking progress'],
-		needs_feedback  => ['AFFF00', 'requestor or community feedback needed to go on'],
-		needs_testing   => ['AFFF00', 'the fix needs to be tested'],
-		accepted        => ['00FF00', 'the fix is accepted'],
-		needs_docs      => ['AFFF00', 'the change needs to be documented'],
-		rejected        => ['d7ffd7', 'this change is rejected'],
-		duplicate       => ['CCCCCC', 'this issue is already an issue'],
-		"can't reproduce" => ['d7ffd7', 'this change is rejected'],
+		needs_details           => ['AFFF00', 'the problem description needs more information'],
+		needs_verification      => ['AFFF00', 'issue needs to be verified'],
+		verified                => ['AFFF00', 'issue has been verified (is reproducible)'],
+		needs_help              => ['00FF00', 'needs outside expertise or capacity'],
+		stalled                 => ['CCCCCC', 'something is blocking progress'],
+		needs_feedback          => ['AFFF00', 'requestor or community feedback needed to go on'],
+		needs_testing           => ['AFFF00', 'the fix needs to be tested'],
+		awaiting_cpan_testers   => ['AFFF00', 'waiting for results from CPAN Testers'],
+		accepted                => ['00FF00', 'the fix is accepted'],
+		fixed                   => ['00FF00', 'the fix has been merged into master'],
+		released                => ['00FF00', 'there is a new release with this fix'],
+		rejected                => ['d7ffd7', 'this change is rejected'],
+		duplicate               => ['CCCCCC', 'this issue is already an issue'],
+		"can't reproduce"       => ['d7ffd7', "the reported behavior has not been seen"],
 		);
 
 
