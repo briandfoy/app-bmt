@@ -852,9 +852,11 @@ sub _labels_set {
 		backlog         => ['CCCCCC', 'not working on this, unless someone else wants to'],
 		);
 
+	state @label_hashes = ( \%platform_labels, \%type_labels, \%status_labels, \%priority_labels );
+
 	use experimental qw(refaliasing);
 	my @labels;
-	foreach \my %h ( \%type_labels, \%status_labels, \%priority_labels ) {
+	foreach \my %h ( @label_hashes ) {
 		my $meta = $h{_meta};
 		while( my( $name, $tuple ) = each %h ) {
 			next if $name =~ m/\A_/;
