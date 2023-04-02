@@ -887,6 +887,7 @@ sub update_github_labels :Register("create the GitHub labels") {
 	state $labels_set = _labels_set();
 	state %labels_to_delete = map { $_ => 1 } (
 		'CPAN Pull Request Challenge',
+		'hacktoberfest',
 		);
 	state %labels_to_translate = (
 		'wontfix'     => "rejected",
