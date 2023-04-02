@@ -628,7 +628,7 @@ sub create_bitbucket ( @args ) {
 		};
 	}
 
-sub create_github ( $name, $description = 'An undescribed module' ) {
+sub create_github ( $description = 'An undescribed module' ) {
 	my $ghojo = _ghojo();
 
 	my( $owner, $repo ) = _github_owner_repo();
@@ -636,10 +636,10 @@ sub create_github ( $name, $description = 'An undescribed module' ) {
 	my $rc = $ghojo->create_repo( { name => $repo, description => $description } );
 
 	if( $rc->is_success ) {
-		return "Created repo <$name>";
+		return "Created repo <$repo>";
 		}
 	else {
-		die "Counld not create repo <$name>: " . dumper($rc);
+		die "Counld not create repo <$repo>: " . dumper($rc);
 		}
 	}
 
