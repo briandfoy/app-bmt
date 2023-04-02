@@ -810,10 +810,21 @@ sub _labels_set {
 		question        => ['D700FF', 'clarify something']
 		);
 
+	state %platform_labels = (
+		_meta => {
+			prefix => 'Platform',
+			},
+		macos   => ['1d76db', 'improve a feature that already exists'],
+		linux   => ['1d76db', 'add a feature that does not exist'],
+		windows => ['1d76db', 'an existing feature does not work'],
+		other   => ['1d76db', 'an existing test is broken'],
+		);
+
 	state %status_labels = (
 		_meta => {
 			prefix => 'Status',
 			},
+		changes_requested       => ['FF0000', 'adjust the pull request as noted in comments'],
 		needs_details           => ['AFFF00', 'the problem description needs more information'],
 		needs_verification      => ['AFFF00', 'issue needs to be verified'],
 		verified                => ['AFFF00', 'issue has been verified (is reproducible)'],
