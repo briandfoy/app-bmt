@@ -354,7 +354,8 @@ Open the main Appveyor page for this repo.
 sub appveyor :Register("open the Appveyor page") {
 	state %Colors = (
 		success   => 'bg_green',
-		failure   => 'bg_red',
+		failure   => 'bg_red', # has this changed?
+		failed    => 'bg_red',
 		'default' => 'bg_cyan',
 		);
 
