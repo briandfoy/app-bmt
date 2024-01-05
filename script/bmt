@@ -377,6 +377,10 @@ sub appveyor :Register("open the Appveyor page") {
 
 	my @jobs = grep defined, eval { $data->{build}{jobs}->@* };
 
+	if( @jobs == 0 ) {
+		return "There were no AppVeyor jobs";
+		}
+
 	my $string = join( "\n", $data->{build}->@{ qw(commitId message) } ) . "\n";
 	foreach my $job ( @jobs ) {
 		my $name = $job->{name} =~ s/\AImage:\s+//r;
