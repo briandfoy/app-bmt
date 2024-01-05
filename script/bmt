@@ -832,13 +832,13 @@ sub _labels_set {
 		_meta => {
 			prefix => 'Type',
 			},
-		enhancement     => ['5F00FF', 'improve a feature that already exists'],
-		feature_request => ['5F00FF', 'add a feature that does not exist'],
-		bug             => ['FF0000', 'an existing feature does not work'],
-		'test bug'      => ['FF0000', 'an existing test is broken'],
-		'test failure'  => ['FF0000', 'an existing (working) test is failing'],
-		documentation   => ['D700FF', 'fix the docs'],
-		question        => ['D700FF', 'clarify something']
+		enhancement       => ['5F00FF', 'improve a feature that already exists'],
+		'feature request' => ['5F00FF', 'add a feature that does not exist'],
+		bug               => ['FF0000', 'an existing feature does not work'],
+		'test bug'        => ['FF0000', 'an existing test is broken'],
+		'test failure'    => ['FF0000', 'an existing (working) test is failing'],
+		documentation     => ['D700FF', 'fix the docs'],
+		question          => ['D700FF', 'clarify something']
 		);
 
 	state %platform_labels = (
