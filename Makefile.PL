@@ -73,6 +73,8 @@ my %WriteMakefile = (
 		'Module::Extract::DeclaredMinimumPerl' => '0',
 		'Mojo::UserAgent'                      => '0',
 		'Mojo::Util'                           => '0',
+		'Text::Fuzzy'                          => '0',
+		'YAML::XS'                             => '0',
 		},
 
 	'META_MERGE' => {
