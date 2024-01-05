@@ -308,6 +308,7 @@ sub all_remote :Register("configure the all remote") ( @args ) {
 
 	my %hosts = (
 		bitbucket => 'git@bitbucket.org',
+		codeberg  => 'git@codeberg.org',
 		gitlab    => 'git@gitlab.com',
 		github    => 'git@github.com',
 		);
@@ -589,6 +590,10 @@ sub cpanv :Register("show the lastest CPAN version") ( @args ) {
 
 Create the Bitbucket repo. This does not push the repo.
 
+=item * create_codeberg
+
+Create the Codeberg repo. This does not push to the repo.
+
 =item * create_gh
 
 Create the GitHub repo. This does not push the repo.
@@ -600,8 +605,9 @@ Create the Gitlab repo. This does not push the repo.
 =cut
 
 sub create_bb :Register("create a BitBucket repo") { create_bitbucket() }
-sub create_gh :Register("create a GitHub repo")    { create_github() }
-sub create_gl :Register("create a GitLab repo")    { create_gitlab() }
+sub create_cb :Register("create a Codeberg repo")  { create_codeberg()  }
+sub create_gh :Register("create a GitHub repo")    { create_github()    }
+sub create_gl :Register("create a GitLab repo")    { create_gitlab()    }
 
 sub create_bitbucket ( @args ) {
 	my $ua = _ua();
@@ -625,6 +631,27 @@ sub create_bitbucket ( @args ) {
 	return do {
 		if( $tx->result->is_success ) { "Created Bitbucket repo <$user/$adjusted_repo>" }
 		else { "Could not create Bitbucket repo\n" . $tx->res->to_string }
+		};
+	}
+
+sub create_codeberg ( @args ) {
+	my $ua = _ua();
+
+	my( $owner, $repo_name ) = _github_owner_repo();
+	my $token = $ENV{CODEBERG_API_TOKEN};
+
+	my $tx = $ua->post(
+		'https://codeberg.org/api/v1/user/repos',
+		{
+			'Content-type'  => 'application/json',
+			'Authorization' => "token $token",
+		},
+		json => { name => $repo_name, default_branch => 'master' }
+		);
+
+	return do {
+		if( $tx->result->is_success ) { "Created Codeberg repo <$repo_name>" }
+		else { "Could not create Codeberg repo\n" . $tx->res->to_string }
 		};
 	}
 
@@ -677,7 +704,7 @@ sub create_repos :Register("create GitHub, Bitbucket, and Gitlab in one go") ( $
 	_run_git_command( 'remote', 'add', 'all', $remote );
 
 	create_bitbucket();
-
+	create_codeberg();
 	create_gitlab();
 
 	all_remote();
@@ -1528,6 +1555,15 @@ sub _classify ( $key, $data = [] ) {
 		$results->{ $item->{$key} }++;
 		}
 	$results;
+	}
+
+sub _codeberg_user { $ENV{CODEBERG_USER} // _codeberg_user_from_all() // $Config{codeberg_user} // 'briandfoy' }
+
+# remote.all.pushurl=git@bitbucket.org:briandfoy/distribution-cooker.git
+sub _codeberg_user_from_all {
+	my( $line ) = _git_config_list( qr/^remote.all.pushurl=git\@codeberg.org:/ );
+	my( $user ) = $line =~ qr|git\@codeberg.org:(.+?)/|;
+	$user;
 	}
 
 =item * _dist_name
