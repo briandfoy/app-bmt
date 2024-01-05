@@ -906,11 +906,12 @@ sub _get_labels {
 		return ();
 		}
 
-	$result->values->to_array->@*;
+	my %hash = map { $_->name, $_ } $result->values->to_array->@*;
+	sort { $a->name cmp $b->name } values %hash;
 	}
 
 sub show_github_labels :Register("show the current GitHub labels") {
-	foreach my $label ( sort { lc($a->{name}) cmp lc($b->{name}) } _get_labels() ) {
+	foreach my $label ( sort { lc($a->name) cmp lc($b->name) } _get_labels() ) {
 		my( $r, $g, $b ) = map { hex($_) } $label->color =~ m/(..)(..)(..)/;
 		say bg_rgb($r, $b, $g ), "   ", reset(), " ", $label->name, " - ", $label->description // '';
 		}
@@ -926,10 +927,11 @@ sub update_github_labels :Register("create the GitHub labels") {
 		'wontfix'     => "rejected",
 		'help wanted' => 'needs help',
 		'invalid'     => 'rejected',
+		'wishlist'    => '',
 		);
 
 	my %counts;
-	foreach my $label ( sort { lc($a->{name}) cmp lc($b->{name}) } _get_labels() ) {
+	foreach my $label ( sort { lc($a->name) cmp lc($b->name) } _get_labels() ) {
 		my $name = $label->name;
 		say "Looking at existing label <$name>";
 		if( exists $labels_to_delete{ $name } ) {
