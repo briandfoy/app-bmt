@@ -320,7 +320,7 @@ sub all_remote :Register("configure the all remote") ( @args ) {
 				no strict 'refs';
 				my $user = &{"_${remote}_user"}();
 				my $push_url = $url =~ s|git\@github.com:(?:\S+?)/(\S+?)\.git$|$hosts{$remote}:$user/$1.git|r;
-				_run_git_command( 'remote', 'add', $remote, $url );
+				_run_git_command( 'remote', 'add', $remote, $push_url );
 				$push_url
 				}
 			};
@@ -333,6 +333,7 @@ sub all_remote :Register("configure the all remote") ( @args ) {
 	# these already exist, so don't re-add them
 	my %push_urls =
 		map { chomp; $_ => 1 }
+		split /\R/,
 		_capture_command( "git config --get-all remote.all.pushurl" );
 
 	foreach my $url ( grep { defined } values %remotes ) {
@@ -1877,7 +1878,8 @@ Returns true if there's a remote with name REMOTE
 
 sub _remote_exists ( $remote ) {
 	chomp( my @remotes = split /\R/, _capture_command( "git remote" ) );
-	scalar grep { $_ eq $remote } @remotes;
+	my $found = grep { $_ eq $remote } @remotes;
+	return $found;
 	}
 
 =item * _repo_exists( URL )
