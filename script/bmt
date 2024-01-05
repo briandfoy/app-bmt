@@ -1159,7 +1159,7 @@ Do nothing.
 
 =cut
 
-sub null :Register("do nothing") { 1 }
+sub null :Register("do nothing") { return '' }
 
 =item * open_all
 
