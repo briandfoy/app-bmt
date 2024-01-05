@@ -299,7 +299,6 @@ pushurls if all doesn't already have them.
 
 sub all_remote :Register("configure the all remote") ( @args ) {
 	my $url = _git_fetch_url( 'origin' ) // _git_fetch_url( 'all' );
-	say "all_remote: url: <$url>";
 
 	unless( $url ) {
 		say "No URL for origin or all. Aborting...";
