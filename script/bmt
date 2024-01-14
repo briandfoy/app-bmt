@@ -1397,7 +1397,7 @@ sub update_appveyor :Register("update to latest Appveyor config") {
 
 	Mojo::UserAgent->new->get( $url )->result->save_to($file);
 
-	return '';
+	return "Fetching $url\nFetched";
 	}
 
 =item * update_bmt
