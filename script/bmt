@@ -55,7 +55,7 @@ better. I don't support anything earlier than the latest commit.
 
 First, my F<Makefile.PL>'s are modulinos. They construct their argument
 lists to C<WriteMakefile> but don't actually do anything unless it's
-call as a program. Load it like a module and I can get that argument list
+called as a program. Load it like a module and I can get that argument list
 without the program doing its work. I can then inspect that data structure.
 
 Second, the modulino uses the package name of the main module and return
