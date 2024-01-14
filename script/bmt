@@ -1430,6 +1430,48 @@ sub update_bmt :Register("update the modules this tool needs") () {
 	App::Cpan->run( @modules );
 	}
 
+=item * update_releaserc
+
+=cut
+
+sub update_releaserc :Register("update the release settings") () {
+	state $cpan_user = $ENV{CPAN_USER} // 'BDFOY';
+	state %defaults = (
+		cpan_user     => $cpan_user,
+		skip_prereqs  => 1,
+		skip_kwalitee => 1,
+		);
+
+	my %from_file = ();
+
+	my @release_files = grep { -e } qw(.releaserc releaserc);
+	@release_files = qw(.releaserc) unless @release_files;
+	my $release_file = $release_files[0];
+
+	if( -e $release_file ) {
+		open my $fh, '<:utf8', $release_file or
+			return "Updating $release_files[0] failed: $!";
+		while( <$fh> ) {
+			chomp;
+			my( $name, $value ) = split /\s+/, $_, 2;
+			$from_file{$name} = $value;
+			}
+		}
+
+	my %config = ( %defaults, %from_file );
+	my $longest_key = ( sort { length($b) <=> length($a) } keys %config )[0];
+	my $width = length($longest_key);
+
+	open my $fh, '>:utf8', $release_file or
+		return "Could not rewrite $release_file: $!\n";
+	foreach my $key ( sort keys %config ) {
+		printf { $fh } "%-*s %s\n", $width, $key, $config{$key};
+		}
+	close $fh;
+
+	return "Updated $release_file";
+	}
+
 =item * workflows
 
 Show a summary of the most recent GitHub action workflows.
