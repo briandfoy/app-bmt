@@ -865,7 +865,9 @@ sub _labels_set {
 		'test bug'        => ['FF0000', 'an existing test is broken'],
 		'test failure'    => ['FF0000', 'an existing (working) test is failing'],
 		documentation     => ['D700FF', 'fix the docs'],
-		question          => ['D700FF', 'clarify something']
+		question          => ['D700FF', 'clarify something'],
+		'distribution problem' => ['D700FF', 'the distributed archive has a problem'],
+		'repository problem'   => ['D700FF', 'the repository has a problem'],
 		);
 
 	state %platform_labels = (
