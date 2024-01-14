@@ -953,10 +953,10 @@ sub update_github_labels :Register("create the GitHub labels") {
 		'hacktoberfest',
 		);
 	state %labels_to_translate = (
-		'wontfix'     => "rejected",
-		'help wanted' => 'needs help',
-		'invalid'     => 'rejected',
-		'wishlist'    => '',
+		'wontfix'     => "Status: rejected",
+		'help wanted' => 'Status: needs help',
+		'invalid'     => 'Status: rejected',
+		'wishlist'    => 'Type: enhancement',
 		);
 
 	my %counts;
