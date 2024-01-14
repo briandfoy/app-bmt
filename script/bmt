@@ -696,6 +696,33 @@ sub create_gitlab ( @args ) {
 		};
 	}
 
+=item * create_release_token
+
+=cut
+
+sub create_release_token :Register("create GitHub release token secret") {
+	state $environment_name = 'release';
+	state $secret_name = 'RELEASE_ACTION_TOKEN';
+
+	my $ghojo = _ghojo();
+
+	unless( exists $ENV{$secret_name} ) {
+		die "Set RELEASE_ACTION_TOKEN and try again\n";
+		}
+
+	my( $owner, $repo ) = _github_owner_repo();
+	my $env_result = $ghojo->create_environment( $owner, $repo, $environment_name );
+	if( $env_result->is_error ) {
+		say $env_result->short_summary;
+		exit(1);
+		}
+	my $secret_result = $ghojo->create_environment_secret( $owner, $repo, $environment_name, $secret_name, $ENV{$secret_name} );
+	if( $secret_result->is_error ) {
+		say $secret_result->short_summary;
+		exit(1);
+		}
+	}
+
 =item * create_repos
 
 Create the GitHub, BitBucket, and Gitlab repos.
