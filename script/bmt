@@ -2038,7 +2038,7 @@ sub _zenodo_page {
 
 =head1 COPYRIGHT
 
-Copyright © 2019-2022 brian d foy. All rights reserved.
+Copyright © 2019-2024 brian d foy. All rights reserved.
 
 =head1 LICENSE
 
