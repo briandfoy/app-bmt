@@ -949,14 +949,14 @@ sub update_github_labels :Register("create the GitHub labels") {
 	my %counts;
 	foreach my $label ( sort { lc($a->name) cmp lc($b->name) } _get_labels() ) {
 		my $name = $label->name;
-		say "Looking at existing label <$name>";
+		debug "Looking at existing label <$name>";
 		if( exists $labels_to_delete{ $name } ) {
-			say "Label <$name> should be deleted";
+			debug "Label <$name> should be deleted";
 			_ghojo()->delete_label( _github_owner_repo(), $name );
 			$counts{'changed'}++;
 			}
 		if( exists $labels_to_translate{ $label->name } ) {
-			say "Label <$name> should be translated";
+			debug "Label <$name> should be translated";
 			my $args = { name => $labels_to_translate{ $name }, color => $label->color, description => $label->description };
 			_ghojo()->update_label( _github_owner_repo(), $name, $args );
 			$counts{'translated'}++;
@@ -974,9 +974,9 @@ sub update_github_labels :Register("create the GitHub labels") {
 		my @exists = grep { exists $labels_now{$_} } ( $set_name, $unprefixed_name );
 		my $result = do {
 			if( @exists ) {
-				say "Label <$exists[0]> exists: update";
+				debug "Label <$exists[0]> exists: update";
 				if( labels_are_the_same( $label_to_set, $labels_now{$exists[0]} ) ) {
-					say "\tThere is no change for <$exists[0]>";
+					debug "\tThere is no change for <$exists[0]>";
 					$counts{'skipped'}++
 					}
 				else {
@@ -985,7 +985,7 @@ sub update_github_labels :Register("create the GitHub labels") {
 					}
 				}
 			else {
-				say "Label <$set_name> does not exist: create";
+				debug "Label <$set_name> does not exist: create";
 				_ghojo()->create_label( _github_owner_repo(), $label_to_set );
 				$counts{'created'}++;
 				}
@@ -994,17 +994,17 @@ sub update_github_labels :Register("create the GitHub labels") {
 		$result = Ghojo::Result->success;
 		say "\t" . do {
 			if( $result->is_success ) {
-				"Label <$label_to_set->{name}> updated / created";
+				success "Label <$label_to_set->{name}> updated / created";
 				}
 			else {
 				push @errors, $result;
-				"Problem with <$label_to_set->{name}>";
+				error "Problem with <$label_to_set->{name}>";
 				}
 			};
 		}
 
-	say "There were " . @errors . " errors";
-	say "Summary: " . dumper(\%counts);
+	debug "There were " . @errors . " errors";
+	debug "Summary: " . dumper(\%counts);
 	return "Labels updated";
 	}
 
