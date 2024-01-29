@@ -9,6 +9,9 @@ use App::bmt;
 
 package App::bmt;
 
+use experimental qw(builtin);
+use builtin qw(trim);
+
 use lib qw(/Users/brian/Dev/ghojo/lib);
 
 use experimental qw(signatures);
@@ -22,7 +25,7 @@ use Module::CoreList;
 
 use Antsy qw(:all);
 use Mojo::UserAgent;
-use Mojo::Util qw(dumper trim);
+use Mojo::Util qw(decode dumper);
 
 my %Commands;
 
