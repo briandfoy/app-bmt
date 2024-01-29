@@ -1411,6 +1411,60 @@ Install the lastest versions of the modules that bmt uses.
 sub update_bmt :Register("update the modules this tool needs") () {
 	my @modules = do {
 		my @found;
+=item * update_copyright
+
+=cut
+
+sub update_copyright :Register("update the copyright year to the current year") () {
+	state @directories_to_search = qw(lib script scripts util utils t xt);
+	state %Files_to_skip = map { $_, 1 } qw(LICENSE);
+
+	my $year = (localtime)[5] + 1900;
+
+	my @dirs = grep { -e } @directories_to_search;
+
+	my @files = grep { /brian/ } `grep -l -R Copyright @dirs`;
+	chomp @files;
+
+	my $errors = 0;
+	say "Processing files:";
+	foreach my $file ( @files ) {
+		next if exists $Files_to_skip{ $file };
+
+		my $file = Mojo::File->new($file);
+
+		my $data = decode 'UTF-8', scalar $file->slurp;
+
+		my $rc = $data =~ s/
+			Copyright \s+
+			(?: © | \([cC]\) ) \s+
+			\d{4} \s*
+			- \s*
+			\K
+			\d{4}
+			(?<post>
+			\s* , \s+
+			brian \x{20} d \x{20} foy
+			)
+			/$year$+{post}/x;
+
+		$errors++ unless $rc;
+
+		say "\t", $rc ? success( "$file updated" ) : error( "$file did not match" );
+
+		$file->spew($data, 'UTF-8') if $rc;
+		}
+	print "\n";
+
+	my $message = do {
+		if( @files == $errors )   { error("No files were updated") }
+		elsif( $errors == 0 )     { "All files were updated" }
+		elsif( $errors < @files ) { error("Some files were updated") }
+		};
+
+	return $message;
+	}
+
 		open my $fh, '<:utf8', __FILE__
 			or die "Could not open " . __FILE__ . ": $!\n";
 		while( <$fh> ) {
