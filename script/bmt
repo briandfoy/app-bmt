@@ -1698,6 +1698,7 @@ Add the URL to REMOTE. This command has many pieces!
 =cut
 
 sub _git_set_push_url ( $remote, $url ) {
+	debug "Adding $url to $remote remote";
 	_run_git_command( 'remote', 'set-url', '--add', '--push', $remote, $url );
 	}
 
