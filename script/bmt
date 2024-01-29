@@ -312,7 +312,8 @@ pushurls if all doesn't already have them.
 =cut
 
 sub all_remote :Register("configure the all remote") ( @args ) {
-	my $url = _git_fetch_url( 'origin' ) // _git_fetch_url( 'all' );
+	state $all_remote = 'all';
+	my $url = _git_fetch_url( 'origin' ) // _git_fetch_url( $all_remote );
 
 	unless( $url ) {
 		say "No URL for origin or all. Aborting...";
@@ -340,8 +341,8 @@ sub all_remote :Register("configure the all remote") ( @args ) {
 			};
 		}
 
-	unless( _remote_exists( 'all' ) ) {
-		_run_git_command( 'remote', 'add', 'all', $url ),
+	unless( _remote_exists( $all_remote ) ) {
+		_run_git_command( 'remote', 'add', $all_remote, $url ),
 		}
 
 	# these already exist, so don't re-add them
@@ -351,13 +352,14 @@ sub all_remote :Register("configure the all remote") ( @args ) {
 		_capture_command( "git config --get-all remote.all.pushurl" );
 
 	foreach my $url ( grep { defined } values %remotes ) {
-		next if exists $push_urls{$url};
-		_git_set_push_url( 'all', $url );
+		next if exists $push_urls_count{$url};
+		debug "Removing duplicated url $url from $all_remote remote";
+		_git_set_push_url( $all_remote, $url );
 		}
 
-	_run_git_command( 'push', '-u', 'all', 'master' );
+	_run_git_command( 'push', '-u', $all_remote, 'master' );
 
-	return 'Adding all remote';
+	return "Adding $all_remote remote";
 	}
 
 =item * appveyor
