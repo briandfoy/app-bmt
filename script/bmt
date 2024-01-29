@@ -346,10 +346,21 @@ sub all_remote :Register("configure the all remote") ( @args ) {
 		}
 
 	# these already exist, so don't re-add them
-	my %push_urls =
-		map { chomp; $_ => 1 }
-		split /\R/,
-		_capture_command( "git config --get-all remote.all.pushurl" );
+	my @push_urls = map { chomp; $_ } split /\R/, _capture_command( "git config --get-all remote.$all_remote.pushurl" );
+	debug Mojo::Util::dumper(\@push_urls);
+	my %push_urls_count;
+	foreach my $url ( @push_urls ) {
+		$push_urls_count{$url}++;
+		}
+	debug Mojo::Util::dumper(\%push_urls_count);
+
+	foreach my $url ( keys %push_urls_count ) {
+		next if $push_urls_count{$url} < 2;
+		# this will delete all the entries that use $url, so we have to
+		# re-add it
+		_run_git_command( 'remote', 'set-url', '--delete', '--push', $all_remote, $url );
+		_git_set_push_url( $all_remote, $url );
+		}
 
 	foreach my $url ( grep { defined } values %remotes ) {
 		next if exists $push_urls_count{$url};
