@@ -1338,53 +1338,34 @@ Run C<make test>.
 
 sub test :Register("run the tests") ( @args ) { _make("test") }
 
-=item * update_actions
-
-Grab the latest GitHub Actions from L<https://github.com/briandfoy/github_workflows/>.
+=item * update_all
 
 =cut
 
-sub update_workflows :Register("update to latest github workflows") {
-	state %file_map = (
-		'linux.yml'   => 'https://raw.githubusercontent.com/briandfoy/github_workflows/master/perl-module-ubuntu.yml',
-		'macos.yml'   => 'https://raw.githubusercontent.com/briandfoy/github_workflows/master/perl-module-macos.yml',
-		'windows.yml' => 'https://raw.githubusercontent.com/briandfoy/github_workflows/master/perl-module-windows.yml',
-		'release.yml' => 'https://raw.githubusercontent.com/briandfoy/github_workflows/master/perl-module-release.yml',
-
-		'perl-module-ubuntu.yml'  => 'https://raw.githubusercontent.com/briandfoy/github_workflows/master/perl-module-ubuntu.yml',
-		'perl-module-macos.yml'   => 'https://raw.githubusercontent.com/briandfoy/github_workflows/master/perl-module-macos.yml',
-		'perl-module-windows.yml' => 'https://raw.githubusercontent.com/briandfoy/github_workflows/master/perl-module-windows.yml',
-		'perl-module-release.yml' => 'https://raw.githubusercontent.com/briandfoy/github_workflows/master/perl-module-release.yml',
+sub update_all :Register("update many things at once") () {
+	state @subs = qw(
+		update_releaserc
+		update_release_token
+		update_appveyor
+		update_workflows
+		update_github_labels
+		create_cb
+		all_remote
 		);
 
-	my $workflow_dir = '.github/workflows';
-	unless( -d $workflow_dir ) {
-		make_path $workflow_dir;
-		foreach my $file ( qw(linux.yml macos.yml windows.yml release.yml) ) {
-			open my $fh, '>', catfile( $workflow_dir, $file ) or warn "Could not open <$file>: $!\n";
-			close $fh;
-			}
-		_run_git_command( 'add', $workflow_dir );
-		}
-
-	my @workflow_files = glob( "$workflow_dir/*.yml" );
-
-	foreach my $file ( @workflow_files ) {
-		my $basename = basename($file);
-		unless( exists $file_map{$basename} ) {
-			warn "<$file> does not have a mapping\n";
+	foreach my $sub ( @subs ) {
+		my $code = __PACKAGE__->can($sub);
+		unless( ref $code ) {
+			warn "Could not find <$sub>. Skipping...\n";
 			next;
 			}
 
-		say "\tSelecting <$file_map{$basename}> for <$file>";
-
-		Mojo::UserAgent->new->get( $file_map{$basename} )
-			->result->save_to($file);
+		say $sub;
+		my $output = $code->();
+		say $output =~ s/^/    /gmr;
 		}
 
-	adjust_linux_workflow();
-
-	return '';
+	'Updated everything';
 	}
 
 =item * update_appveyor
@@ -1411,6 +1392,25 @@ Install the lastest versions of the modules that bmt uses.
 sub update_bmt :Register("update the modules this tool needs") () {
 	my @modules = do {
 		my @found;
+		open my $fh, '<:utf8', __FILE__
+			or die "Could not open " . __FILE__ . ": $!\n";
+		while( <$fh> ) {
+			next unless m/
+				(?-x:require) \s+
+				(?<module>
+					[A-Z][A-Z0-9_]*
+					(?: \:\:[A-Z][A-Z0-9_]* )*
+				)
+				/ix;
+			push @found, $+{module};
+			}
+		sort @found;
+		};
+
+	state $rc = require App::Cpan;
+	App::Cpan->run( @modules );
+	}
+
 =item * update_copyright
 
 =cut
@@ -1465,25 +1465,6 @@ sub update_copyright :Register("update the copyright year to the current year") 
 	return $message;
 	}
 
-		open my $fh, '<:utf8', __FILE__
-			or die "Could not open " . __FILE__ . ": $!\n";
-		while( <$fh> ) {
-			next unless m/
-				(?-x:require) \s+
-				(?<module>
-					[A-Z][A-Z0-9_]*
-					(?: \:\:[A-Z][A-Z0-9_]* )*
-				)
-				/ix;
-			push @found, $+{module};
-			}
-		sort @found;
-		};
-
-	state $rc = require App::Cpan;
-	App::Cpan->run( @modules );
-	}
-
 =item * update_releaserc
 
 =cut
@@ -1507,6 +1488,7 @@ sub update_releaserc :Register("update the release settings") () {
 			return "Updating $release_files[0] failed: $!";
 		while( <$fh> ) {
 			chomp;
+			next unless /\S/;
 			my( $name, $value ) = split /\s+/, $_, 2;
 			$from_file{$name} = $value;
 			}
@@ -1519,11 +1501,88 @@ sub update_releaserc :Register("update the release settings") () {
 	open my $fh, '>:utf8', $release_file or
 		return "Could not rewrite $release_file: $!\n";
 	foreach my $key ( sort keys %config ) {
+		next if $key =~ m/\A sf_/x; # ignore sourceforge info
 		printf { $fh } "%-*s %s\n", $width, $key, $config{$key};
 		}
 	close $fh;
 
 	return "Updated $release_file";
+	}
+
+=item * update_release_token
+
+=cut
+
+sub update_release_token :Register("update the GitHub release token secret from RELEASE_ACTION_TOKEN") {
+	state $environment_name = 'release';
+	state $secret_name = 'RELEASE_ACTION_TOKEN';
+
+	my $ghojo = _ghojo();
+
+	unless( exists $ENV{$secret_name} ) {
+		return "Set RELEASE_ACTION_TOKEN and try again\n";
+		}
+
+	my( $owner, $repo ) = _github_owner_repo();
+	my $env_result = $ghojo->create_environment( $owner, $repo, $environment_name );
+	if( $env_result->is_error ) {
+		say $env_result->short_summary;
+		exit(1);
+		}
+	my $secret_result = $ghojo->create_environment_secret( $owner, $repo, $environment_name, $secret_name, $ENV{$secret_name} );
+	if( $secret_result->is_error ) {
+		say $secret_result->short_summary;
+		exit(1);
+		}
+	}
+
+=item * update_workflows
+
+Grab the latest GitHub Actions from L<https://github.com/briandfoy/github_workflows/>.
+
+=cut
+
+sub update_workflows :Register("update to latest github workflows") {
+	state %file_map = (
+		'linux.yml'   => 'https://raw.githubusercontent.com/briandfoy/github_workflows/master/perl-module-ubuntu.yml',
+		'macos.yml'   => 'https://raw.githubusercontent.com/briandfoy/github_workflows/master/perl-module-macos.yml',
+		'windows.yml' => 'https://raw.githubusercontent.com/briandfoy/github_workflows/master/perl-module-windows.yml',
+		'release.yml' => 'https://raw.githubusercontent.com/briandfoy/github_workflows/master/perl-module-release.yml',
+
+		'perl-module-ubuntu.yml'  => 'https://raw.githubusercontent.com/briandfoy/github_workflows/master/perl-module-ubuntu.yml',
+		'perl-module-macos.yml'   => 'https://raw.githubusercontent.com/briandfoy/github_workflows/master/perl-module-macos.yml',
+		'perl-module-windows.yml' => 'https://raw.githubusercontent.com/briandfoy/github_workflows/master/perl-module-windows.yml',
+		'perl-module-release.yml' => 'https://raw.githubusercontent.com/briandfoy/github_workflows/master/perl-module-release.yml',
+		);
+
+	my $workflow_dir = '.github/workflows';
+	unless( -d $workflow_dir ) {
+		make_path $workflow_dir;
+		foreach my $file ( qw(linux.yml macos.yml windows.yml release.yml) ) {
+			open my $fh, '>', catfile( $workflow_dir, $file ) or warn "Could not open <$file>: $!\n";
+			close $fh;
+			}
+		_run_git_command( 'add', $workflow_dir );
+		}
+
+	my @workflow_files = glob( "$workflow_dir/*.yml" );
+
+	foreach my $file ( @workflow_files ) {
+		my $basename = basename($file);
+		unless( exists $file_map{$basename} ) {
+			warn "<$file> does not have a mapping\n";
+			next;
+			}
+
+		say "\tSelecting <$file_map{$basename}> for <$file>";
+
+		Mojo::UserAgent->new->get( $file_map{$basename} )
+			->result->save_to($file);
+		}
+
+	adjust_linux_workflow();
+
+	return '';
 	}
 
 =item * workflows
