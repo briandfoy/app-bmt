@@ -34,6 +34,16 @@ use constant EX_ERROR            => 1;
 use constant EX_USAGE            => 2;
 use constant EX_COMMAND_DISABLED => 4;
 
+=item * debug
+
+=cut
+
+sub debug ($message) { say STDERR text_cyan() . $message . reset() if am_debugging() }
+sub am_debugging () { $ENV{BMT_DEBUG} }
+
+sub success ($message) { text_green() . $message . reset() }
+sub error ($message)   { text_red()   . $message . reset() }
+
 =head1 NAME
 
 bmt - brian's module tool
