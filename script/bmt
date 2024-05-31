@@ -683,6 +683,7 @@ sub create_codeberg ( @args ) {
 
 	return do {
 		if( $tx->result->is_success ) { "Created Codeberg repo <$repo_name>" }
+		elsif( $tx->result->code eq '409' ) { "Codeberg repo already exists" }
 		else { "Could not create Codeberg repo\n" . $tx->res->to_string }
 		};
 	}
