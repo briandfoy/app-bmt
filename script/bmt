@@ -1472,7 +1472,7 @@ sub update_copyright :Register("update the copyright year to the current year") 
 =cut
 
 sub update_releaserc :Register("update the release settings") () {
-	state $cpan_user = $ENV{CPAN_USER} // 'BDFOY';
+	state $cpan_user = $ENV{CPAN_USER} // 'BRIANDFOY';
 	state %defaults = (
 		cpan_user     => $cpan_user,
 		skip_prereqs  => 1,
@@ -1497,6 +1497,7 @@ sub update_releaserc :Register("update the release settings") () {
 		}
 
 	my %config = ( %defaults, %from_file );
+	$config{cpan_user} = $cpan_user;
 	my $longest_key = ( sort { length($b) <=> length($a) } keys %config )[0];
 	my $width = length($longest_key);
 
@@ -1526,6 +1527,7 @@ sub update_release_token :Register("update the GitHub release token secret from 
 		}
 
 	my( $owner, $repo ) = _github_owner_repo();
+	debug "update_release_token: owner: $owner repo: $repo";
 	my $env_result = $ghojo->create_environment( $owner, $repo, $environment_name );
 	if( $env_result->is_error ) {
 		say $env_result->short_summary;
