@@ -1612,12 +1612,12 @@ sub workflows :Register("show the last set of workflows") ( @args ) {
 	my $string;
 	foreach my $item ( $result->values->to_array->@* ) {
 		state $id = do {
-			my $id = $item->head_commit->id;
+			my $id = $item->{head_commit}{id};
 			$string .= "$id\n";
-			$string .= $item->head_commit->message . "\n";
+			$string .= $item->{head_commit}{message} . "\n";
 			$id;
 			};
-		last unless $id eq $item->head_commit->id;
+		last unless $id eq $item->{head_commit}{id};
 		my( $name, $status, $conclusion ) =
 			map( { $item->{$_} // '' } qw(name status conclusion) );
 
