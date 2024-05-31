@@ -24,6 +24,7 @@ use File::Spec::Functions;
 use Module::CoreList;
 
 use Antsy qw(:all);
+use Mojo::JSON qw(encode_json);
 use Mojo::UserAgent;
 use Mojo::Util qw(decode dumper);
 
@@ -589,18 +590,79 @@ Output the latest CPAN Testers results for this module.
 
 =cut
 
-sub cpan_testers :Register("show Testers result for the latest version") ( $release = undef ) {
+sub _by_os ( $string ) {
+	local $_ = $string;
+	   if( /(free|open)bsd/n ) { 'bsd' }
+	elsif( /linux/   ) { 'linux'   }
+	elsif( /solaris/ ) { 'solaris' }
+	elsif( /darwin/  ) { 'darwin'  }
+	else               { $_ }
+	};
+
+sub _by_version( $string ) {
+	sprintf '%d.%03d', split /\./, $string =~ s/\A 5 \. \d+ \K .*//xr;
+	};
+
+sub _cpan_testers_classify_matrix ( $data ) {
+	my $matrix = {};
+	foreach my $entry ( $data->@* ) {
+		my $platform = _by_os( $entry->{platform} );
+		$matrix->{$platform}{ _by_version($entry->{perl}) }{ $entry->{grade} }++
+		}
+	return $matrix;
+	}
+
+sub _cpan_testers_json ( $release = undef ) {
 	$release //= _latest_release_version();
 	my $dist_name = _dist_name();
 	my $url = sprintf 'http://api.cpantesters.org/v3/summary/%s/%s', $dist_name, $release;
 
 	my $data = _ua()->get( $url )->result->json;
-	return unless ref $data eq ref [];
+	return [] unless ref $data eq ref [];
+	return $data;
+	}
+
+sub cpan_testers :Register("show Testers result for the latest version") ( $release = undef ) {
+	my $data = _cpan_testers_json($release);
+
+	say _dist_name() . ' ' . ( $release // _latest_release_version() );
+
 	my $results = _classify( 'grade', $data );
-	sprintf '%s / %s / %s',
+	printf "%s / %s / %s\n",
 		text_green() . (sprintf '%3s', $results->{pass} // '-') . reset(),
 		text_red()   . (sprintf '%3s', $results->{fail} // '-') . reset(),
 		text_cyan()  . (sprintf '%3s', $results->{na}   // '-') . reset();
+
+	my @records;
+	foreach my $entry ( $data->@* ) {
+		state $rc = print "\n";
+		next unless $entry->{grade} eq 'fail';
+
+		push @records, [
+			text_red()  . 'fail' . reset(),
+			_by_os($entry->{platform}),
+			_by_version($entry->{perl}),
+			sprintf('https://www.cpantesters.org/report/%s', $entry->{guid})
+			];
+		}
+
+	@records = sort {
+		$a->[1] cmp $b->[1]
+		  or
+		$a->[2] cmp $b->[2]
+		} @records;
+
+	foreach my $entry ( @records ) {
+		printf "%s %-10s %5s   %s\n", $entry->@*
+		}
+	}
+
+sub cpan_testers_matrix :Register("show Testers results as a matrix") ( $release = undef ) {
+	my $data = _cpan_testers_json($release);
+
+	my $matrix = _cpan_testers_classify_matrix( $data );
+
+	say encode_json( $matrix );
 	}
 
 =item * cpanv
