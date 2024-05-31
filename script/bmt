@@ -247,6 +247,7 @@ sub _linux_workflow { '.github/workflows/linux.yml' }
 sub adjust_linux_workflow :Register("adjust linux workflow perl versions") {
 	state $rc = require YAML::XS;
 	my $target = _linux_workflow();
+	return "" unless -e $target;
 	my $yaml = YAML::XS::LoadFile( $target );
 
 	my $arguments = _settings();
