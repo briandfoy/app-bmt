@@ -1425,7 +1425,7 @@ sub update_copyright :Register("update the copyright year to the current year") 
 
 	my @dirs = grep { -e } @directories_to_search;
 
-	my @files = grep { /brian/ } `grep -l -R Copyright @dirs`;
+	my @files = `grep -l -R Copyright @dirs`;
 	chomp @files;
 
 	my $errors = 0;
