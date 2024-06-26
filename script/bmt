@@ -261,8 +261,9 @@ sub adjust_linux_workflow :Register("adjust linux workflow perl versions") {
 
 	my @versions = $yaml->{jobs}{perl}{strategy}{matrix}{'perl-version'}->@*;
 
-	my @should_remove = grep { $_ < $min_version_s } grep { /\A5/ } @versions;
-	unshift @should_remove, '5.8' unless $min_version eq '5.008';
+	my @should_remove = grep { my $s = $_; $s =~ s/-.*//; $s < $min_version_s } grep { /\A5/ } @versions;
+	my @five_point_eights = grep { /\A5\.8/ } @versions;
+	unshift @should_remove, @five_point_eights unless $min_version eq '5.008';
 
 	say "\tfound versions: @versions";
 	say "\tshould remove: @should_remove";
