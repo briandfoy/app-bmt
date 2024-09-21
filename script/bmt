@@ -24,7 +24,7 @@ use File::Spec::Functions;
 use Module::CoreList;
 
 use Antsy qw(:all);
-use Mojo::JSON qw(encode_json);
+use Mojo::JSON qw(decode_json encode_json);
 use Mojo::UserAgent;
 use Mojo::Util qw(decode dumper);
 
@@ -843,6 +843,88 @@ sub deps :Register("show the dependency chain for this dist") {
 	return $string;
 	}
 
+=item * downstreams
+
+=cut
+
+sub downstreams :Register("discover and track downstream users") {
+	state $downstream_file = '.downstream.json';
+	if( ! -e $downstream_file or 0 == -s $downstream_file ) {
+		open my $fh, '>:utf8', $downstream_file;
+		print {$fh} <<~'JSON';
+			{
+			"meta": {},
+			"downstreams": []
+			}
+			JSON
+		}
+
+	my $raw = Mojo::File->new($downstream_file)->slurp;
+	my $perl = decode_json($raw);
+
+	my %hash = map {
+		$_->{dist} => $_;
+		} $perl->{downstreams}->@*;
+
+	my $command = "cpan-dependents " . _main_module();
+	my @dist_names = `$command`;
+	chomp(@dist_names);
+
+	foreach my $dist_name ( @dist_names ) {
+		say "Examining $dist_name";
+		my $dist_meta = _metacpan()->release($dist_name);
+
+		my $item = do {
+			if( exists $hash{$dist_name} ) { $hash{$dist_name} }
+			else {
+				say "\tadding new downstream entry for $dist_name";
+				my $new_item = {};
+				push $perl->{downstreams}->@*, $new_item;
+				$new_item;
+				}
+			};
+
+		my @table = (
+			[ 'dist',               $dist_name ],
+			[ 'active',             \1 ],
+			[ 'do_not_contanct',    \0 ],
+			[ 'email',              undef ],
+			[ 'primary_maintainer', $dist_meta->{data}{author} ],
+			[ 'repo',               ( $dist_meta->{data}{metadata}{resources}{url} // $dist_meta->{data}{metadata}{resources}{url} ), ],
+			[ 'main_module',        $dist_meta->{data}{main_module}, ],
+			[ 'metacpan',           "https://metacpan.org/pod/$item->{main_module}" ],
+			[ 'ignore',             $item->{dist} =~ m/\A(Bundle|Task)-/n ? \1 : \0 ],
+			);
+
+		foreach my $row ( @table ) {
+			my( $field, $default ) = $row->@*;
+
+			unless( exists $item->{$field} ) {
+				say "\tadding field $field";
+				}
+			unless( defined $item->{$field} ) {
+				next unless defined $default;
+				my $setting = do {
+					if( ref $default && ref $default eq ref \1 ) {
+						$$default ? '<true>' : '<false>';
+						}
+					else { undef }
+					};
+				next unless defined $setting;
+				say "\tupdating $field to $setting";
+				$item->{$field} //= $default;
+				}
+			}
+
+		}
+
+	open my $fh, '>:encoding(UTF-8)', $downstream_file;
+	print {$fh} JSON::PP->new->pretty->encode($perl);
+	close $fh;
+
+	join "\n\t", "Downstream CPAN modules are", sort @dist_names;
+	}
+
 =item * dump_dist
 
 Output as JSON the distribution information from MetaCPAN.
@@ -924,15 +1006,19 @@ sub _labels_set {
 		_meta => {
 			prefix => 'Type',
 			},
-		enhancement       => ['5F00FF', 'improve a feature that already exists'],
-		'feature request' => ['5F00FF', 'add a feature that does not exist'],
-		bug               => ['FF0000', 'an existing feature does not work'],
-		'test bug'        => ['FF0000', 'an existing test is broken'],
-		'test failure'    => ['FF0000', 'an existing (working) test is failing'],
-		documentation     => ['D700FF', 'fix the docs'],
-		question          => ['D700FF', 'clarify something'],
-		'distribution problem' => ['D700FF', 'the distributed archive has a problem'],
-		'repository problem'   => ['D700FF', 'the repository has a problem'],
+		'enhancement'             => ['5F00FF', 'improve a feature that already exists'],
+		'feature request'         => ['5F00FF', 'add a feature that does not exist'],
+		'modernization'           => ['5F00FF', 'code is updated for latest practices'],
+		'bug'                     => ['FF0000', 'an existing feature does not work'],
+		'test bug'                => ['FF0000', 'an existing test is broken'],
+		'test failure'            => ['FF0000', 'an existing (working) test is failing'],
+		'documentation'           => ['D700FF', 'fix the docs'],
+		'question'                => ['D700FF', 'clarify something'],
+		'distribution problem'    => ['D700FF', 'the distributed archive has a problem'],
+		'repository housekeeping' => ['D700FF', 'the repository needs to be updated'],
+		'repository problem'      => ['D700FF', 'the repository has a problem'],
+		'downstream'              => ['D700FF', 'downstream effects'],
+		'release issue'           => ['D700FF', 'something is wrong with a release'],
 		);
 
 	state %platform_labels = (
@@ -1976,6 +2062,7 @@ Returns true if STRING is a valid Perl namespace, and false otherwise.
 =cut
 
 sub _is_valid_package ( $package ) {
+say "package is <$package>";
 	return 1 if $package =~ m/ \A [A-Z][A-Z0-9_]* (:: [A-Z][A-Z0-9_]* )* \z /xi;
 	return 0;
 	}
@@ -2185,8 +2272,8 @@ Get the C<WriteMakefileArgs> from F<Makefile.PL>.
 sub _settings {
 	state $package = eval { require "./Makefile.PL" };
 	die "Could not load Makefile.PL: $@\n" unless $package;
-	die "Makefile.PL doesn't seem to have retuned a package name!\n"
-		if $package =~ m/\A[A-Z][A-Z0-9_]+(?:\:\:[A-Z][A-Z0-9_]+)*\z/;
+	die "Makefile.PL doesn't seem to have retuned a package name! <$package>\n"
+		unless _is_valid_package($package);
 	state $settings = $package->arguments;
 	$settings;
 	}
