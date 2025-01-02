@@ -488,7 +488,7 @@ sub cff :Register("create or update the CITATION.cff file") {
 		"family-names" => 'foy',
 		"given-names"  => 'brian d',
 		"orcid"        => _orc_id(),
-		"email"        => 'bdfoy@cpan.org',
+		"email"        => 'briandfoy@pobox.com',
 		"alias"        => "briandfoy"
 		}
 		];
