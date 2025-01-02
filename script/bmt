@@ -24,9 +24,11 @@ use File::Spec::Functions;
 use Module::CoreList;
 
 use Antsy qw(:all);
+use Cpanel::JSON::XS ();
 use Mojo::JSON qw(decode_json encode_json);
 use Mojo::UserAgent;
 use Mojo::Util qw(decode dumper);
+use Time::HiRes qw(gettimeofday tv_interval);
 
 my %Commands;
 
@@ -1794,6 +1796,14 @@ sub version :Register("show the bmt version") {
 	return basename($0) . " version " . App::bmt->VERSION . " using Perl " . $^V
 	}
 
+=item * x
+
+=cut
+
+sub x :Register("experimental ever changing target") {
+	my $result = _recursive_deps( _dist_name() );
+	}
+
 =item * zenodo
 
 Open the Zenodo page for this distribution
@@ -1832,6 +1842,12 @@ sub _appveyor_api_key ( @args ) {
 sub _appveyor_page ( @args ) {
 	sprintf "https://ci.appveyor.com/project/%s/%s", _github_owner_repo();
 	}
+
+sub _big_json ( $data ) {
+	state $coder = Cpanel::JSON::XS->new->pretty->max_depth;
+	$coder->encode($data);
+	}
+
 
 sub _bitbucket_page ( @args ) {
 	my $url = _git_fetch_url( 'bitbucket' );
@@ -1909,6 +1925,95 @@ sub _codeberg_user_from_all {
 	my( $user ) = $line =~ qr|git\@codeberg.org:(.+?)/|;
 	$user;
 	}
+
+=item * _recursive_deps
+
+=cut
+
+sub _recursive_deps {
+	my $dist_name = _dist_name();
+
+	my %Grand = ( $dist_name => { level => 0, module => _main_module(), dist => $dist_name, deps => {} } );
+
+	my @queue = ( $Grand{$dist_name} );
+	my %prefetched = ();
+	my %minimum_perls;
+	my %dist_errors;
+
+	my $start_time = [gettimeofday];
+
+	my( $step, $processed ) = ( 0, 0 );
+	while( my $next = shift @queue ) {
+		my( $dist, $deps ) = $next->@{qw(dist deps)};
+		debug "\t" . ++$step . ": Looking at $dist";
+		debug "NEXT: " . Mojo::Util::dumper( $next );
+
+		if( $prefetched{$dist} ) {
+			debug "Already saw $dist so reusing";
+			$deps->%* = $prefetched{$dist}{deps}->%*;
+			next;
+			}
+
+		$next->{sequence} = ++$processed;
+		unless( am_debugging() ) {
+			print '.' unless am_debugging();
+			print " [$processed]\n" unless $processed % 50;
+			}
+
+		my $data = _metacpan()->release($dist);
+
+		my @hashes = map {
+			my $h = {
+				module => $_->{module},
+				deps   => {},
+				level  => $next->{level} + 1,
+				version => $_->{version},
+				dist   => eval { _metacpan()->module( $_->{module} )->{data}{distribution} } // undef,
+				};
+			} $data->{data}{dependency}->@*;
+
+		my( $perl ) = grep { $_->{module} eq 'perl' } @hashes;
+		if( $perl ) {
+			$next->{minimum_perl} = $perl->{version};
+			$minimum_perls{$dist} = $next->{minimum_perl};
+			}
+
+		my $Threshold = $ENV{BMT_RECURSIVE_DEPS_THRESHOLD} // 4;
+		push @queue, grep { $_->{level} <= $Threshold and defined $_->{dist} and ! exists $prefetched{ $_->{dist} } } @hashes;
+		debug "There are now " . @queue . " things in the queue";
+		foreach my $item ( @hashes ) {
+			my $key = 'dist';
+			unless( defined $item->{dist} ) {
+				debug "the hash for module <$item->{module}> did not have an entry for dist";
+				$dist_errors{$item->{module}}++;
+				$key = 'module';
+				}
+			debug sprintf "Adding %s (%s) to deps", $item->{$key}, $key;
+			$deps->{ $item->{dist} } = $item if defined $item->{dist};
+			}
+
+		$prefetched{$dist} = $next;
+		}
+
+	my %big_hash = (
+		meta => {
+			elapsed   => tv_interval($start_time),
+			gm_time   => gmtime(),
+			module    => _main_module(),
+			steps     => $step,
+			processed => $processed,
+			},
+		perls       => \%minimum_perls,
+		deps        => \%prefetched,
+		dist_errors => \%dist_errors,
+		);
+
+	Mojo::File->new('reverse_deps.dump')->spew( Mojo::Util::dumper(\%big_hash) );
+	Mojo::File->new('reverse_deps.json')->spew( _big_json(\%big_hash) );
+	Mojo::File->new('min-perl.json'    )->spew( encode_json(\%minimum_perls) );
+
+	"Done: steps: $step processed: $processed";
+}
 
 =item * _dist_name
 
