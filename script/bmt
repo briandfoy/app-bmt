@@ -1502,6 +1502,7 @@ sub update_all :Register("update many things at once") () {
 		update_github_labels
 		create_cb
 		all_remote
+		update_copyright
 		);
 
 	foreach my $sub ( @subs ) {
