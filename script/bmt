@@ -795,7 +795,7 @@ Create the GitHub, BitBucket, and Gitlab repos.
 =cut
 
 sub create_repos :Register("create GitHub, Bitbucket, and Gitlab in one go") ( $repo_name, $description ) {
-	create_github( $repo_name, $description );
+	create_github( $description );
 	my $remote = sprintf 'git@github.com:%s/%s.git', _github_user(), $repo_name;
 	_run_git_command( 'remote', 'add', 'all', $remote );
 
