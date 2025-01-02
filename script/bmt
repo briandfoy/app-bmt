@@ -2062,7 +2062,6 @@ Returns true if STRING is a valid Perl namespace, and false otherwise.
 =cut
 
 sub _is_valid_package ( $package ) {
-say "package is <$package>";
 	return 1 if $package =~ m/ \A [A-Z][A-Z0-9_]* (:: [A-Z][A-Z0-9_]* )* \z /xi;
 	return 0;
 	}
