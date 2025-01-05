@@ -447,6 +447,35 @@ Open the main Bitbucket page for this repo.
 
 sub bitbucket :Register("open the main Bitbucket page") { _browser( _bitbucket_page() ) }
 
+=item * bump
+
+=cut
+
+sub _next_version ( $module_version ) {
+	$module_version = sprintf "%.3f", $module_version;
+	my $increment = $module_version =~ /9\z/ ? 0.002 : 0.001;
+
+	$module_version += $increment;
+	}
+
+sub bump :Register("bump the version if needed") {
+	my( undef, $cpan_version ) = _cpan_version();
+	my $module_version = modulev();
+
+	if( $cpan_version < $module_version ) {
+		return "module version is higher than CPAN version already";
+		}
+
+	say "CPAN and local module versions are both $cpan_version";
+	my $next_version = _next_version( $module_version );
+
+	say "Next version => $next_version";
+
+	system 'ppi_version', $module_version, $next_version;
+
+	return 'version updated';
+	}
+
 =item * cff
 
 Create or update a CITATION.cff file.
@@ -674,11 +703,17 @@ Output the latest CPAN version and release date.
 
 =cut
 
-sub cpanv :Register("show the lastest CPAN version") ( @args ) {
+sub _cpan_version () {
 	my $module = _metacpan()->module( _main_module() );
 
 	my $date    = $module->{data}{date};
 	my $version = $module->{data}{version};
+
+	( $date, $version );
+	}
+
+sub cpanv :Register("show the lastest CPAN version") ( @args ) {
+	my( $date, $version ) = _cpan_version();
 
 	return "CPAN: @{[_main_module()]} $version ---> $date";
 	}
@@ -1496,7 +1531,7 @@ sub test :Register("run the tests") ( @args ) { _make("test") }
 =cut
 
 sub update_all :Register("update many things at once") () {
-	state @subs = qw(
+	state @actions = qw(
 		update_releaserc
 		update_release_token
 		update_appveyor
@@ -1507,17 +1542,7 @@ sub update_all :Register("update many things at once") () {
 		update_copyright
 		);
 
-	foreach my $sub ( @subs ) {
-		my $code = __PACKAGE__->can($sub);
-		unless( ref $code ) {
-			warn "Could not find <$sub>. Skipping...\n";
-			next;
-			}
-
-		say $sub;
-		my $output = $code->();
-		say $output =~ s/^/    /gmr;
-		}
+	_combine_actions( @actions );
 
 	'Updated everything';
 	}
@@ -1796,6 +1821,18 @@ sub version :Register("show the bmt version") {
 	return basename($0) . " version " . App::bmt->VERSION . " using Perl " . $^V
 	}
 
+=item * versions
+
+Show the CPAN version and main module version
+
+=cut
+
+sub versions :Register("show the CPAN and main module versions") {
+	state @actions = qw(modulev cpanv);
+	_combine_actions( @actions );
+	"all versions";
+	}
+
 =item * x
 
 =cut
@@ -1924,6 +1961,20 @@ sub _codeberg_user_from_all {
 	my( $line ) = _git_config_list( qr/^remote.all.pushurl=git\@codeberg.org:/ );
 	my( $user ) = $line =~ qr|git\@codeberg.org:(.+?)/|;
 	$user;
+	}
+
+sub _combine_actions ( @actions ) {
+	foreach my $sub ( @actions ) {
+		my $code = __PACKAGE__->can($sub);
+		unless( ref $code ) {
+			warn "Could not find <$sub>. Skipping...\n";
+			next;
+			}
+
+		say "======== $sub";
+		my $output = $code->();
+		say $output =~ s/^/    /gmr;
+		}
 	}
 
 =item * _recursive_deps
