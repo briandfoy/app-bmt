@@ -246,8 +246,19 @@ Adjust the GitHub linux workflow:
 
 =cut
 
+sub _cron_line {
+	my $module = _main_module();
+
+	my $weekday = int rand 7;
+	my $hour    = int rand 24;
+	my $minute  = int rand 60;
+
+	# cron: "37 3 * * 0"
+	"$minute $hour * * $weekday";
+	}
+
 sub _linux_workflow { '.github/workflows/linux.yml' }
-sub adjust_linux_workflow :Register("adjust linux workflow perl versions") {
+sub adjust_linux_workflow :Register("adjust linux workflow perl versions") ( %args ) {
 	state $rc = require YAML::XS;
 	my $target = _linux_workflow();
 	return "" unless -e $target;
@@ -269,7 +280,7 @@ sub adjust_linux_workflow :Register("adjust linux workflow perl versions") {
 
 	say "\tfound versions: @versions";
 	say "\tshould remove: @should_remove";
-	return unless @should_remove;
+	#return unless @should_remove;
 
 	my $alternation = join '|', @should_remove;
 	$alternation =~ s/\./\\./g;
@@ -278,6 +289,13 @@ sub adjust_linux_workflow :Register("adjust linux workflow perl versions") {
 	my $data = do { local( @ARGV, $/ ) = ($target); <> };
 
 	my $subs = $data =~ s/$regex//g;
+
+	if( $args{cron} ) {
+		my $cron_line = _cron_line();
+
+		$data =~ s/^ \s+ - \s+ cron: \s+ \K .+ /"$cron_line"/xm and
+			say "Cron line updates to $cron_line";
+		}
 
 	open my $fh, '>:encoding(UTF-8)', $target;
 	print { $fh } $data;
@@ -466,12 +484,24 @@ sub bump :Register("bump the version if needed") {
 		return "module version is higher than CPAN version already";
 		}
 
+	my %changed_before = map { chomp; $_ => 1 } `git diff --name-only`;
+	if( keys %changed_before ) {
+		return "repo is dirty. stopping.";
+		}
+
 	say "CPAN and local module versions are both $cpan_version";
 	my $next_version = _next_version( $module_version );
 
 	say "Next version => $next_version";
 
-	system 'ppi_version', $module_version, $next_version;
+	my @output = `ppi_version $module_version $next_version`;
+	my %changed_after = map { chomp; $_ => 1 } `git diff --name-only`;
+
+	my @new = grep { ! exists $changed_before{$_} } keys %changed_after;
+	say join "\n\t", "Changed modules:", @new;
+
+	my $message = "bump version from $cpan_version to $next_version";
+	_run_git_command( 'commit', '-a', '-m', $message );
 
 	return 'version updated';
 	}
@@ -762,7 +792,7 @@ sub create_bitbucket ( @args ) {
 
 	return do {
 		if( $tx->result->is_success ) { "Created Bitbucket repo <$user/$adjusted_repo>" }
-		else { "Could not create Bitbucket repo\n" . $tx->res->to_string }
+		else { "Could not create Bitbucket repo\n" . $tx->req->to_string . "\n" . $tx->res->to_string }
 		};
 	}
 
@@ -821,7 +851,7 @@ sub create_gitlab ( @args ) {
 
 	return do {
 		if( $tx->result->is_success ) { "Created Gitlab repo <$repo_name>" }
-		else { "Could not create Gitlab repo\n" . $tx->res->to_string }
+		else { "Could not create Bitbucket repo\n" . $tx->req->to_string . "\n" . $tx->res->to_string }
 		};
 	}
 
@@ -1746,24 +1776,74 @@ sub update_workflows :Register("update to latest github workflows") {
 		_run_git_command( 'add', $workflow_dir );
 		}
 
-	my @workflow_files = glob( "$workflow_dir/*.yml" );
+	my @workflow_files = map {
+		my $file = Mojo::File->new($_);
+		my $contents = $file->slurp;
+		my( $version ) = $contents =~ m/\# version (\S+)/;
 
-	foreach my $file ( @workflow_files ) {
-		my $basename = basename($file);
+		my %h =	(
+			basename => basename($file),
+			filename => $_,
+			current_version  => ( $version // 'no version' ),
+			updated_version => undef,
+			);
+
+		\%h;
+		} glob( "$workflow_dir/*.yml" );
+
+	foreach my $h ( @workflow_files ) {
+		my $basename = $h->{basename};
 		unless( exists $file_map{$basename} ) {
-			warn "<$file> does not have a mapping\n";
+			warn "<$h->{filename}> does not have a mapping\n";
 			next;
 			}
 
-		say "\tSelecting <$file_map{$basename}> for <$file>";
+		say "\tSelecting <$file_map{$basename}> for <$h->{filename}>";
 
 		Mojo::UserAgent->new->get( $file_map{$basename} )
-			->result->save_to($file);
+			->result->save_to($h->{filename});
 		}
 
-	adjust_linux_workflow();
+	my( $update_cron ) =
+		map { $_->{current_version} ne $_->{updated_version} }
+		grep { $_->{basename} eq 'linux' }
+		@workflow_files;
+	adjust_linux_workflow(cron => $update_cron, perl_list => 1);
+
+	my( $linux_workflow ) = grep { $_->{basename} eq 'linux' } @workflow_files;
+
+	foreach my $h ( @workflow_files ) {
+		my $file = Mojo::File->new($h->{filename});
+		my $contents = $file->slurp;
+		( $h->{updated_version} ) = $contents =~ m/\# version (\S+)/;
+		}
+
+	my $latest_commit = latest_commit( 'briandfoy', 'github_workflows' );
+
+	my $string = "Updated GitHub workflows from https://github.com/briandfoy/github_workflows\n$latest_commit\n\n";
+	$string .= join "\n", map {
+		sprintf '* %s upgraded: %s -> %s', $_->@{qw(basename current_version updated_version)}
+		}
+		sort { $a->{basename} cmp $b->{basename} }
+		grep { $_->{current_version} ne $_->{updated_version} }
+		@workflow_files;
+	$string .= "\n";
+
+	_run_git_command( 'commit', '-m', $string, '.github/workflows' );
 
 	return '';
+	}
+
+sub latest_commit :Register("latest commit") ( $owner = undef, $repo = undef ) {
+	my( $default_owner, $default_repo ) = _github_owner_repo();
+	$owner //= $default_owner;
+	$repo  //= $default_repo;
+
+	my $result = _ghojo()->get_latest_commit( $owner, $repo );
+
+	my( $first ) = $result->values->to_array->@*;
+
+	$first->{sha};
 	}
 
 =item * workflows
