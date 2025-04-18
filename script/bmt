@@ -2,6 +2,7 @@
 use utf8;
 use v5.36;
 use warnings;
+use open qw(:std :utf8);
 
 our $VERSION = '1.004';
 
@@ -44,8 +45,14 @@ use constant EX_COMMAND_DISABLED => 4;
 sub debug ($message) { say STDERR text_cyan() . $message . reset() if am_debugging() }
 sub am_debugging () { $ENV{BMT_DEBUG} }
 
+sub info    ($message) { $message }
 sub success ($message) { text_green() . $message . reset() }
-sub error ($message)   { text_red()   . $message . reset() }
+sub error   ($message) { text_red()   . $message . reset() }
+sub file    ($file)    { text_bright_green()   . $file . reset() }
+sub url     ($url)     { text_bright_magenta() . $url . reset() }
+sub command ($command) { chomp($command); bg_bright_blue() . text_black() . $command . reset() . $/; }
+
+sub subheader ($message) { chomp($message); bg_bright_cyan() . text_black() . $message . reset() . $/; }
 
 =head1 NAME
 
@@ -135,7 +142,7 @@ sub ATTRIBUTE_TRACE ( $package, $code_ref, $attribute ) {
 
 	*{"$sub_name"} = sub ( @args ) {
 		my @caller = caller(1);
-		say "Entering <$sub_name>";
+		debug( "Entering <$sub_name>" );
 		my @return;
 		if( wantarray ) {
 			push @return, $code_ref->( @args );
@@ -144,7 +151,7 @@ sub ATTRIBUTE_TRACE ( $package, $code_ref, $attribute ) {
 			push @return, scalar $code_ref->( @args );
 			}
 
-		say "Leaving <$sub_name>";
+		debug("Leaving <$sub_name>");
 		return wantarray ? @return : $return[0];
 		};
 
@@ -179,18 +186,18 @@ sub run ( @args ) {
 		}
 
 	if( my $message = _disabled( $command ) ) {
-		say STDERR "Command <$command> is disabled for this repo:\n\t$message";
+		say STDERR error( "Command <$command> is disabled for this repo:\n\t$message" );
 		exit EX_COMMAND_DISABLED;
 		}
 	elsif( exists $Commands{$command} ) {
 		my $output = $Commands{$command}->[0]( @cmd_args );
-		say $output unless 0 == length $output;
+		say info( $output ) unless 0 == ( length($output) // 0 );
 		}
 	else {
 		state $rc = require Text::Fuzzy;
 		my $tf = Text::Fuzzy->new($command);
 		my $nearest = $tf->nearestv( [ keys %Commands ] );
-		say STDERR "Command <$command> wasn't found; perhaps you meant <$nearest>?\nSee `$0 help`";
+		say STDERR error( "Command <$command> wasn't found; perhaps you meant <$nearest>?\nSee `$0 help`" );
 		exit EX_USAGE;
 		}
 	}
@@ -270,7 +277,7 @@ sub adjust_linux_workflow :Register("adjust linux workflow perl versions") ( %ar
 	$min_version = '5.008' if $min_version eq '5.008005';
 	my $min_version_s = $min_version =~ s/5\.\K0+//r;
 	$min_version_s = '5.08' if $min_version eq '5.008';
-	say "\tmin version: $min_version -> $min_version_s";
+	debug( "\tmin version: $min_version -> $min_version_s" );
 
 	my @versions = $yaml->{jobs}{perl}{strategy}{matrix}{'perl-version'}->@*;
 
@@ -278,8 +285,8 @@ sub adjust_linux_workflow :Register("adjust linux workflow perl versions") ( %ar
 	my @five_point_eights = grep { /\A5\.8/ } @versions;
 	unshift @should_remove, @five_point_eights unless $min_version eq '5.008';
 
-	say "\tfound versions: @versions";
-	say "\tshould remove: @should_remove";
+	say info( "\tfound versions: @versions" );
+	say info( "\tshould remove: @should_remove" );
 	#return unless @should_remove;
 
 	my $alternation = join '|', @should_remove;
@@ -294,7 +301,7 @@ sub adjust_linux_workflow :Register("adjust linux workflow perl versions") ( %ar
 		my $cron_line = _cron_line();
 
 		$data =~ s/^ \s+ - \s+ cron: \s+ \K .+ /"$cron_line"/xm and
-			say "Cron line updates to $cron_line";
+			say info( "Cron line updates to $cron_line" );
 		}
 
 	open my $fh, '>:encoding(UTF-8)', $target;
@@ -339,7 +346,7 @@ sub all_remote :Register("configure the all remote") ( @args ) {
 	my $url = _git_fetch_url( 'origin' ) // _git_fetch_url( $all_remote );
 
 	unless( $url ) {
-		say "No URL for origin or all. Aborting...";
+		say STDERR error( "No URL for origin or all. Aborting..." );
 		return;
 		}
 
@@ -489,16 +496,16 @@ sub bump :Register("bump the version if needed") {
 		return "repo is dirty. stopping.";
 		}
 
-	say "CPAN and local module versions are both $cpan_version";
+	say info( "CPAN and local module versions are both $cpan_version" );
 	my $next_version = _next_version( $module_version );
 
-	say "Next version => $next_version";
+	say info( "Next version => $next_version" );
 
 	my @output = `ppi_version $module_version $next_version`;
 	my %changed_after = map { chomp; $_ => 1 } `git diff --name-only`;
 
 	my @new = grep { ! exists $changed_before{$_} } keys %changed_after;
-	say join "\n\t", "Changed modules:", @new;
+	say info( join "\n\t", "Changed modules:", @new );
 
 	my $message = "bump version from $cpan_version to $next_version";
 	_run_git_command( 'commit', '-a', '-m', $message );
@@ -687,7 +694,7 @@ sub _cpan_testers_json ( $release = undef ) {
 sub cpan_testers :Register("show Testers result for the latest version") ( $release = undef ) {
 	my $data = _cpan_testers_json($release);
 
-	say _dist_name() . ' ' . ( $release // _latest_release_version() );
+	say info( _dist_name() . ' ' . ( $release // _latest_release_version() ) );
 
 	my $results = _classify( 'grade', $data );
 	printf "%s / %s / %s\n",
@@ -887,7 +894,7 @@ sub deps :Register("show the dependency chain for this dist") {
 
 	while( my $next = shift @queue ) {
 		my $suffix = exists $Seen->{ $next->[1] } ?  ' <already seen>' : '';
-		say "\t" x $next->[0], $next->[1], $suffix;
+		say info( join '', "\t" x $next->[0], $next->[1], $suffix );
 		next if $suffix;
 		$Seen->{ $next->[1] }++;
 
@@ -904,7 +911,7 @@ sub deps :Register("show the dependency chain for this dist") {
 			eval { $mcpan->release( $next->[1] )->{data}{dependency} } // [];
 		}
 
-	say "Dependency count: " . keys $Seen->%*;
+	say info( "Dependency count: " . keys $Seen->%* );
 	my $string = join " ", sort keys $Seen->%*;
 	$string =~ s/.{50,70}\K\s/\n/g;
 	return $string;
@@ -938,13 +945,13 @@ sub downstreams :Register("discover and track downstream users") {
 	chomp(@dist_names);
 
 	foreach my $dist_name ( @dist_names ) {
-		say "Examining $dist_name";
+		say info( "Examining $dist_name" );
 		my $dist_meta = _metacpan()->release($dist_name);
 
 		my $item = do {
 			if( exists $hash{$dist_name} ) { $hash{$dist_name} }
 			else {
-				say "\tadding new downstream entry for $dist_name";
+				say info( "\tadding new downstream entry for $dist_name" );
 				my $new_item = {};
 				push $perl->{downstreams}->@*, $new_item;
 				$new_item;
@@ -967,7 +974,7 @@ sub downstreams :Register("discover and track downstream users") {
 			my( $field, $default ) = $row->@*;
 
 			unless( exists $item->{$field} ) {
-				say "\tadding field $field";
+				say info( "\tadding field $field" );
 				}
 			unless( defined $item->{$field} ) {
 				next unless defined $default;
@@ -978,7 +985,7 @@ sub downstreams :Register("discover and track downstream users") {
 					else { undef }
 					};
 				next unless defined $setting;
-				say "\tupdating $field to $setting";
+				say info( "\tupdating $field to $setting" );
 				$item->{$field} //= $default;
 				}
 			}
@@ -1636,7 +1643,7 @@ sub update_copyright :Register("update the copyright year to the current year") 
 	chomp @files;
 
 	my $errors = 0;
-	say "Processing files:";
+	say subheader( "Processing files");
 	foreach my $file ( @files ) {
 		next if exists $Files_to_skip{ $file };
 
@@ -1791,25 +1798,33 @@ sub update_workflows :Register("update to latest github workflows") {
 		\%h;
 		} glob( "$workflow_dir/*.yml" );
 
+	say subheader( "Fetching latest workflow files" );
 	foreach my $h ( @workflow_files ) {
 		my $basename = $h->{basename};
 		unless( exists $file_map{$basename} ) {
-			warn "<$h->{filename}> does not have a mapping\n";
+			warn sprintf "\t<%s> does not have a mapping\n", file($h->{filename});
 			next;
 			}
 
-		say "\tSelecting <$file_map{$basename}> for <$h->{filename}>";
+		printf "\tSelecting <%s> for <%s>\n", url($file_map{$basename} =~ s|\Ahttps://.*?/||r), file($h->{filename});
 
 		Mojo::UserAgent->new->get( $file_map{$basename} )
 			->result->save_to($h->{filename});
+
+		my $file = Mojo::File->new($h->{filename});
+		my $contents = $file->slurp;
+		( $h->{updated_version} ) = $contents =~ m/\# version (\S+)/;
 		}
+
+	print "\n";
 
 	my( $update_cron ) =
 		map { $_->{current_version} ne $_->{updated_version} }
 		grep { $_->{basename} eq 'linux' }
 		@workflow_files;
-	adjust_linux_workflow(cron => $update_cron, perl_list => 1);
 
+	say subheader( "Adjusting versions for Perl minimum version" );
+	adjust_linux_workflow(cron => $update_cron, perl_list => 1);
 	my( $linux_workflow ) = grep { $_->{basename} eq 'linux' } @workflow_files;
 
 	foreach my $h ( @workflow_files ) {
@@ -1822,13 +1837,15 @@ sub update_workflows :Register("update to latest github workflows") {
 
 	my $string = "Updated GitHub workflows from https://github.com/briandfoy/github_workflows\n$latest_commit\n\n";
 	$string .= join "\n", map {
-		sprintf '* %s upgraded: %s -> %s', $_->@{qw(basename current_version updated_version)}
+		my $h = $_;
+		sprintf '* %s upgraded: %s -> %s', file($h->{basename}), map { $_ // 'no version' } $h->@{qw(current_version updated_version)}
 		}
 		sort { $a->{basename} cmp $b->{basename} }
-		grep { $_->{current_version} ne $_->{updated_version} }
+		grep { $_->{current_version} ne ($_->{updated_version} // '') }
 		@workflow_files;
-	$string .= "\n";
+	$string =~ s/\s+\z//;
 
+	say "\n", subheader( "Committing updates to workflows" );
 	_run_git_command( 'commit', '-m', $string, '.github/workflows' );
 
 	return '';
@@ -1918,7 +1935,7 @@ sub versions :Register("show the CPAN and main module versions") {
 =cut
 
 sub x :Register("experimental ever changing target") {
-	my $result = _recursive_deps( _dist_name() );
+	my $sha = latest_commit( 'briandfoy', 'github_workflows' );
 	}
 
 =item * zenodo
@@ -2483,7 +2500,11 @@ Run LIST as a C<system> command.
 =cut
 
 sub _run_command ( @command ) {
+	print command( join ' ', map { ( /\s/ ? qq("$_") : $_ ) =~ s/\n/\x{2424}/gr } @command );
+	print text_orange();
 	system { $command[0] } @command;
+	print reset();
+	print "\n";
 	}
 
 =item * _run_git_command( LIST )
