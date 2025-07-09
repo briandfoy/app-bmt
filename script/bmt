@@ -1818,13 +1818,8 @@ sub update_workflows :Register("update to latest github workflows") {
 
 	print "\n";
 
-	my( $update_cron ) =
-		map { $_->{current_version} ne $_->{updated_version} }
-		grep { $_->{basename} eq 'linux' }
-		@workflow_files;
-
 	say subheader( "Adjusting versions for Perl minimum version" );
-	adjust_linux_workflow(cron => $update_cron, perl_list => 1);
+	adjust_linux_workflow(cron => 1, perl_list => 1);
 	my( $linux_workflow ) = grep { $_->{basename} eq 'linux' } @workflow_files;
 
 	foreach my $h ( @workflow_files ) {
