@@ -34,7 +34,7 @@ their repository ([]()) to the current repo:
 	% bmt update_workflows
 
 Then various magic happens, including modifying the general workflows
-for local requirements, such as randomizing the [`cron` triggers]().
+for local requirements, such as randomizing the [`cron` triggers](https://developers.cloudflare.com/workers/configuration/cron-triggers/).
 
 Most times I notice myself doing something often, I turn it into a command
 in this tool. This script grows by accretion.
