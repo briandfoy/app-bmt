@@ -29,7 +29,7 @@ local version.
 
 Other tasks make changes. For example, I have a set of general GitHub
 workflows that I use across all of my modules. To update those from
-their repository ([]()) to the current repo:
+their repository ([briandfoy/github_workflows](https://github.com/briandfoy/github_workflows)) to the current repo:
 
 	% bmt update_workflows
 
