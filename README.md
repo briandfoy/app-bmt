@@ -34,7 +34,7 @@ their repository ([briandfoy/github_workflows](https://github.com/briandfoy/gith
 	% bmt update_workflows
 
 Then various magic happens, including modifying the general workflows
-for local requirements, such as randomizing the [`cron` triggers](https://developers.cloudflare.com/workers/configuration/cron-triggers/).
+for local requirements, such as randomizing the [`cron` triggers](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule).
 
 Most times I notice myself doing something often, I turn it into a command
 in this tool. This script grows by accretion.
