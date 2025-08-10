@@ -1594,9 +1594,23 @@ sub update_appveyor :Register("update to latest Appveyor config") {
 	my $url  = 'https://raw.githubusercontent.com/briandfoy/brians_perl_modules_appveyor_config/master/perl-appveyor.yml';
 	my $file = '.appveyor.yml';
 
+	say subheader( "Updating Appveyor Config" );
+
+	my( $starting_version ) = map { /(\d+)/ } `grep '^# version' $file`;
+
 	Mojo::UserAgent->new->get( $url )->result->save_to($file);
 
-	return "Fetching $url\nFetched";
+	my( $latest_version ) = map { /(\d+)/ } `grep '^# version' $file`;
+	if( $starting_version eq $latest_version ) {
+		return "$file is up-to-date already";
+		}
+
+	my $string = "update $file to version $latest_version\n\n$url";
+
+	_run_git_command( 'add', $file );
+	_run_git_command( 'commit', '-m', $string, $file );
+
+	return "Updated $file to version from $starting_version to $latest_version";
 	}
 
 =item * update_bmt
