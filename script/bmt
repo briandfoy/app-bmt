@@ -6,6 +6,7 @@ use open qw(:std :utf8);
 
 our $VERSION = '1.004';
 
+use lib qw(/Users/brian/Dev/bmt/lib /Users/brian/Dev/ghojo/lib);
 use App::bmt;
 
 package App::bmt;
@@ -13,7 +14,6 @@ package App::bmt;
 use experimental qw(builtin);
 use builtin qw(trim);
 
-use lib qw(/Users/brian/Dev/ghojo/lib);
 
 use experimental qw(signatures);
 use B;
@@ -2561,7 +2561,7 @@ sub _ua {
 =cut
 
 sub _version {
-	state $rc = require Module::Extract::Version;
+	state $rc = require Module::Extract::VERSION;
 	my $version_from = _settings()->{VERSION_FROM};
 
 	my $version = Module::Extract::VERSION->parse_version_safely( $version_from );
