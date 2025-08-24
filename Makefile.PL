@@ -68,9 +68,12 @@ my %WriteMakefile = (
 
 	'PREREQ_PM'     => {
 		'Antsy'                                => '0',
+		'Hash::AsObject'                       => '0',
 		'Ghojo'                                => '0',
+		'Log::Log4perl'                        => '0',
 		'MetaCPAN::Client'                     => '0',
 		'Module::Extract::DeclaredMinimumPerl' => '0',
+		'Module::Extract::VERSION'             => '0',
 		'Mojo::UserAgent'                      => '0',
 		'Mojo::Util'                           => '0',
 		'Text::Fuzzy'                          => '0',
