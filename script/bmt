@@ -265,37 +265,47 @@ sub _cron_line {
 	}
 
 sub _linux_workflow { '.github/workflows/linux.yml' }
+
+sub _latest_perl_version () {
+	42;
+	}
+
+sub get_minor_version_list :Register("show the minor version list") () {
+	my $arguments = _settings();
+	my $min_minor = do {
+		local $_ = $arguments->{MIN_PERL_VERSION};
+		if(    /\A v5 \. (\d+)    (?:\. \d{1,3})? \z/ax ) { # v5.8.9
+			$1 + 0;
+			}
+		elsif( /\A 5 \. (\d{1,3}) (?:\d{1,3})?    \z/ax ) { # 5.008009
+			$1 + 0;
+			}
+		else {
+			say error( "Did not recognize minimum version format <$arguments->{MIN_PERL_VERSION}>" );
+			8;
+			}
+		};
+
+	my @versions = grep { $_ % 2 == 0 } $min_minor .. _latest_perl_version();
+	debug( "min minor: $min_minor" );
+	debug( "versions: @versions " );
+
+	return @versions;
+	}
+
 sub adjust_linux_workflow :Register("adjust linux workflow perl versions") ( %args ) {
 	state $rc = require YAML::XS;
 	my $target = _linux_workflow();
 	return "" unless -e $target;
-	my $yaml = YAML::XS::LoadFile( $target );
-
-	my $arguments = _settings();
-	my $min_version = $arguments->{MIN_PERL_VERSION};
-	$min_version = '5.014' if $min_version eq '5.014001';
-	$min_version = '5.008' if $min_version eq '5.008005';
-	my $min_version_s = $min_version =~ s/5\.\K0+//r;
-	$min_version_s = '5.08' if $min_version eq '5.008';
-	debug( "\tmin version: $min_version -> $min_version_s" );
-
-	my @versions = $yaml->{jobs}{perl}{strategy}{matrix}{'perl-version'}->@*;
-
-	my @should_remove = grep { my $s = $_; $s =~ s/-.*//; $s < $min_version_s } grep { /\A5/ } @versions;
-	my @five_point_eights = grep { /\A5\.8/ } @versions;
-	unshift @should_remove, @five_point_eights unless $min_version eq '5.008';
-
-	say info( "\tfound versions: @versions" );
-	say info( "\tshould remove: @should_remove" );
-	#return unless @should_remove;
-
-	my $alternation = join '|', @should_remove;
-	$alternation =~ s/\./\\./g;
-	my $regex = qr/^\h+-\h+'($alternation)'\R/m;
 
 	my $data = do { local( @ARGV, $/ ) = ($target); <> };
 
-	my $subs = $data =~ s/$regex//g;
+	my $versions = join ', ', get_minor_version_list();
+
+	unless( $data =~ s/^ \h+ perl-version : \h+ \[ \h* \K .* /$versions ]/mx ) {
+		debug( "versions: <$versions>" );
+		say error( "could not make versions substitution in adjust_linux_workflow" );
+		}
 
 	if( $args{cron} ) {
 		my $cron_line = _cron_line();
@@ -1788,6 +1798,9 @@ sub update_workflows :Register("update to latest github workflows") {
 		);
 
 	my $workflow_dir = '.github/workflows';
+
+	# this part just touches all the files on first go since the next part only updates
+	# files that exist
 	unless( -d $workflow_dir ) {
 		make_path $workflow_dir;
 		foreach my $file ( qw(linux.yml macos.yml windows.yml release.yml) ) {
@@ -1844,14 +1857,21 @@ sub update_workflows :Register("update to latest github workflows") {
 
 	my $latest_commit = latest_commit( 'briandfoy', 'github_workflows' );
 
+	# find out which files are different
+	my $updated = `git status`;
+
 	my $string = "Updated GitHub workflows from https://github.com/briandfoy/github_workflows\n$latest_commit\n\n";
 	$string .= join "\n", map {
 		my $h = $_;
-		sprintf '* %s upgraded: %s -> %s', file($h->{basename}), map { $_ // 'no version' } $h->@{qw(current_version updated_version)}
+		sprintf '* %s upgraded: %s -> %s',
+			$h->{basename},
+			map { $_ // 'no version' } $h->@{qw(current_version updated_version)}
 		}
 		sort { $a->{basename} cmp $b->{basename} }
 		grep { $_->{current_version} ne ($_->{updated_version} // '') }
+		grep { $updated =~ /\Q$_->{basename}\E/ }
 		@workflow_files;
+
 	$string =~ s/\s+\z//;
 
 	say "\n", subheader( "Committing updates to workflows" );
