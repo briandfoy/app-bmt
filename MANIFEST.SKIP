@@ -76,3 +76,5 @@ App-
 
 \.gitattributes\b
 App-.*
+
+.downstream.json
