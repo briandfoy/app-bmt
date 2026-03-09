@@ -868,7 +868,7 @@ sub create_gitlab ( @args ) {
 
 	return do {
 		if( $tx->result->is_success ) { "Created Gitlab repo <$repo_name>" }
-		else { "Could not create Bitbucket repo\n" . $tx->req->to_string . "\n" . $tx->res->to_string }
+		else { "Could not create Gitlab repo\n" . $tx->req->to_string . "\n" . $tx->res->to_string }
 		};
 	}
 
