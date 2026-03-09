@@ -2231,17 +2231,20 @@ sub _ghojo () {
 	state $ghojo = do {
 		my %args = do {
 			if( defined $ENV{BMT_GITHUB_TOKEN} ) {
+				debug "using BMT_GITHUB_TOKEN";
 				( token => $ENV{BMT_GITHUB_TOKEN} );
 				}
 			elsif( defined $ENV{BMT_GITHUB_TOKEN_FILE} and -e $ENV{BMT_GITHUB_TOKEN_FILE} ) {
+				debug "using BMT_GITHUB_TOKEN_FILE";
 				( token_file => $ENV{BMT_GITHUB_TOKEN_FILE} )
 				}
 			elsif( -e $default_file ) {
+				debug "using $default_file";
 				( token_file => $default_file )
 				}
 			};
-		my $ghojo = Ghojo->new( \%args );
 
+		my $ghojo = Ghojo->new( \%args );
 		if( $ghojo->is_error ) {
 			say $ghojo->long_summary;
 			exit(10);
