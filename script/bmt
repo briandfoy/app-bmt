@@ -783,10 +783,10 @@ Create the Gitlab repo. This does not push the repo.
 
 =cut
 
-sub create_bb :Register("create a BitBucket repo") { create_bitbucket() }
-sub create_cb :Register("create a Codeberg repo")  { create_codeberg()  }
-sub create_gh :Register("create a GitHub repo")    { create_github()    }
-sub create_gl :Register("create a GitLab repo")    { create_gitlab()    }
+sub create_bb :Register("create a BitBucket repo") { &create_bitbucket }
+sub create_cb :Register("create a Codeberg repo")  { &create_codeberg  }
+sub create_gh :Register("create a GitHub repo")    { &create_github    }
+sub create_gl :Register("create a GitLab repo")    { &create_gitlab    }
 
 sub create_bitbucket ( @args ) {
 	my $ua = _ua();
