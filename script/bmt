@@ -840,7 +840,7 @@ sub create_github ( $description = 'An undescribed module' ) {
 
 	my( $owner, $repo ) = _github_owner_repo();
 
-	my $rc = $ghojo->create_repo( { name => $repo, description => $description } );
+	my $rc = $ghojo->create_repo( $repo, sub {1}, { name => $repo, description => $description } );
 
 	if( $rc->is_success ) {
 		return "Created repo <$repo>";
