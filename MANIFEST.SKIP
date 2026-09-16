@@ -78,3 +78,6 @@ App-
 App-.*
 
 .downstream.json
+
+.downstream.json
+cpan_tester_reports
