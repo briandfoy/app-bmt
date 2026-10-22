@@ -41,3 +41,4 @@ inc/
 .prove
 *.icloud
 none/
+.claude/
