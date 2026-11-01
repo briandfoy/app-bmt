@@ -1225,21 +1225,21 @@ sub update_github_labels :Register("create the GitHub labels") {
 				debug "Label <$exists[0]> exists: update";
 				if( labels_are_the_same( $label_to_set, $labels_now{$exists[0]} ) ) {
 					debug "\tThere is no change for <$exists[0]>";
-					$counts{'skipped'}++
+					$counts{'skipped'}++;
+					Ghojo::Result->success;
 					}
 				else {
-					_ghojo()->update_label( _github_owner_repo(), $exists[0], $label_to_set );
 					$counts{'updated'}++;
+					_ghojo()->update_label( _github_owner_repo(), $exists[0], $label_to_set );
 					}
 				}
 			else {
 				debug "Label <$set_name> does not exist: create";
-				_ghojo()->create_label( _github_owner_repo(), $label_to_set );
 				$counts{'created'}++;
+				_ghojo()->create_label( _github_owner_repo(), $label_to_set );
 				}
 			};
 
-		$result = Ghojo::Result->success;
 		say "\t" . do {
 			if( $result->is_success ) {
 				success "Label <$label_to_set->{name}> updated / created";
@@ -1283,7 +1283,7 @@ Download the F<.gitignore> template from github/gitignore
 sub gitignore_template :Register("grab the gitignore template") {
 	state $url = 'https://raw.githubusercontent.com/github/gitignore/main/Perl.gitignore';
 
-	_ua()->get($url)->res->save_to( '.gitignore' );
+	_fetch_file( $url, '.gitignore' ) or return error( "Did not update .gitignore" );
 
 	"Fetched .gitignore template"
 	}
@@ -1608,7 +1608,7 @@ sub update_appveyor :Register("update to latest Appveyor config") {
 
 	my( $starting_version ) = map { /(\d+)/ } `grep '^# version' $file`;
 
-	Mojo::UserAgent->new->get( $url )->result->save_to($file);
+	_fetch_file( $url, $file ) or return error( "Did not update $file" );
 
 	my( $latest_version ) = map { /(\d+)/ } `grep '^# version' $file`;
 	if( $starting_version eq $latest_version ) {
@@ -1835,8 +1835,7 @@ sub update_workflows :Register("update to latest github workflows") {
 
 		printf "\tSelecting <%s> for <%s>\n", url($file_map{$basename} =~ s|\Ahttps://.*?/||r), file($h->{filename});
 
-		Mojo::UserAgent->new->get( $file_map{$basename} )
-			->result->save_to($h->{filename});
+		_fetch_file( $file_map{$basename}, $h->{filename} ) or next;
 
 		my $file = Mojo::File->new($h->{filename});
 		my $contents = $file->slurp;
@@ -2202,6 +2201,28 @@ for example).
 =cut
 
 sub _dist_name () { _main_module() =~ s/::/-/gr }
+
+=item * _fetch_file( URL, FILE )
+
+Save URL to FILE. Returns true if that worked and false otherwise. A
+failed fetch warns and leaves FILE untouched.
+
+=cut
+
+sub _fetch_file ( $url, $file ) {
+	my $tx = _ua()->get( $url );
+	if( my $error = $tx->error ) {
+		warn "Could not fetch <$url>: $error->{message}\n";
+		return 0;
+		}
+
+	unless( eval { $tx->res->save_to( $file ); 1 } ) {
+		warn "Could not save <$file>: $@";
+		return 0;
+		}
+
+	return 1;
+	}
 
 =item * _git_fetch_url( REMOTE_NAME )
 
