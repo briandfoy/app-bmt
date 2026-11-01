@@ -236,7 +236,7 @@ sub adjust_appveyor :Register("adjust AppVeyor config for min Perl versions") {
 	my $data = do { local( @ARGV, $/ ) = ($target); <> };
 	$data =~ s/^\h+Ubuntu1804\h*\R//m if $min gt '5.026';
 	$data =~ s/^\h+Ubuntu2004\h*\R//m if $min gt '5.030';
-	$data =~ s/^\h+Ubuntu2204\h*\R//m if $min gt '5.034';
+	$data =~ s/^\h+Ubuntu2024\h*\R//m if $min gt '5.034';
 
 	open my $fh, '>:encoding(UTF-8)', $target;
 	print { $fh } $data;
