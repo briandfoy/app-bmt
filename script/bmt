@@ -974,7 +974,7 @@ sub downstreams :Register("discover and track downstream users") {
 			[ 'do_not_contact',     \0 ],
 			[ 'email',              undef ],
 			[ 'primary_maintainer', $dist_meta->{data}{author} ],
-			[ 'repo',               ( $dist_meta->{data}{metadata}{resources}{url} // $dist_meta->{data}{metadata}{resources}{url} ), ],
+			[ 'repo',               ( $dist_meta->{data}{metadata}{resources}{url} // $dist_meta->{data}{metadata}{resources}{homepage} ), ],
 			[ 'main_module',        $dist_meta->{data}{main_module}, ],
 			[ 'metacpan',           "https://metacpan.org/pod/$item->{main_module}" ],
 			[ 'ignore',             $item->{dist} =~ m/\A(Bundle|Task)-/n ? \1 : \0 ],
