@@ -84,7 +84,7 @@ my %WriteMakefile = (
 		},
 
 	'PREREQ_PM'     => {
-		'Antsy'                                => '0',
+		'Antsy'                                => '0.908',
 		'Hash::AsObject'                       => '0',
 #		'Ghojo'                                => '0', # Not on CPAN
 		'Log::Log4perl'                        => '0',
