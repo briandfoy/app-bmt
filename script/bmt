@@ -971,7 +971,7 @@ sub downstreams :Register("discover and track downstream users") {
 		my @table = (
 			[ 'dist',               $dist_name ],
 			[ 'active',             \1 ],
-			[ 'do_not_contanct',    \0 ],
+			[ 'do_not_contact',     \0 ],
 			[ 'email',              undef ],
 			[ 'primary_maintainer', $dist_meta->{data}{author} ],
 			[ 'repo',               ( $dist_meta->{data}{metadata}{resources}{url} // $dist_meta->{data}{metadata}{resources}{url} ), ],
