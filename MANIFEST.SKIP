@@ -81,3 +81,5 @@ App-.*
 
 .downstream.json
 cpan_tester_reports
+.claude/
+CLAUDE.md
