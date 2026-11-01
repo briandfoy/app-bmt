@@ -24,7 +24,7 @@ use File::Path qw(make_path);
 use File::Spec::Functions;
 use Module::CoreList;
 
-use Antsy qw(:all);
+use Antsy 0.908 qw(:all);
 use Cpanel::JSON::XS ();
 use Mojo::JSON qw(decode_json encode_json);
 use Mojo::UserAgent;
@@ -42,17 +42,17 @@ use constant EX_COMMAND_DISABLED => 4;
 
 =cut
 
-sub debug ($message) { say STDERR text_cyan() . $message . reset() if am_debugging() }
+sub debug ($message) { say STDERR text_cyan() . $message . reset_all() if am_debugging() }
 sub am_debugging () { $ENV{BMT_DEBUG} }
 
 sub info    ($message) { $message }
-sub success ($message) { text_green() . $message . reset() }
-sub error   ($message) { text_red()   . $message . reset() }
-sub file    ($file)    { text_bright_green()   . $file . reset() }
-sub url     ($url)     { text_bright_magenta() . $url . reset() }
-sub command ($command) { chomp($command); bg_bright_blue() . text_black() . $command . reset() . $/; }
+sub success ($message) { text_green() . $message . reset_all() }
+sub error   ($message) { text_red()   . $message . reset_all() }
+sub file    ($file)    { text_bright_green()   . $file . reset_all() }
+sub url     ($url)     { text_bright_magenta() . $url . reset_all() }
+sub command ($command) { chomp($command); bg_bright_blue() . text_black() . $command . reset_all() . $/; }
 
-sub subheader ($message) { chomp($message); bg_bright_cyan() . text_black() . $message . reset() . $/; }
+sub subheader ($message) { chomp($message); bg_bright_cyan() . text_black() . $message . reset_all() . $/; }
 
 =head1 NAME
 
@@ -451,7 +451,7 @@ sub appveyor :Register("open the Appveyor page") {
 	my $string = join( "\n", $data->{build}->@{ qw(commitId message) } ) . "\n";
 	foreach my $job ( @jobs ) {
 		my $name = $job->{name} =~ s/\AImage:\s+//r;
-		my $status = do { no strict 'refs'; &{ $Colors{$job->{status} || 'default'} } . $job->{status} . reset() };
+		my $status = do { no strict 'refs'; &{ $Colors{$job->{status} || 'default'} } . $job->{status} . reset_all() };
 		$string .= sprintf "%s: %s\n", $name, $status;
 		}
 
@@ -708,9 +708,9 @@ sub cpan_testers :Register("show Testers result for the latest version") ( $rele
 
 	my $results = _classify( 'grade', $data );
 	printf "%s / %s / %s\n",
-		text_green() . (sprintf '%3s', $results->{pass} // '-') . reset(),
-		text_red()   . (sprintf '%3s', $results->{fail} // '-') . reset(),
-		text_cyan()  . (sprintf '%3s', $results->{na}   // '-') . reset();
+		text_green() . (sprintf '%3s', $results->{pass} // '-') . reset_all(),
+		text_red()   . (sprintf '%3s', $results->{fail} // '-') . reset_all(),
+		text_cyan()  . (sprintf '%3s', $results->{na}   // '-') . reset_all();
 
 	my @records;
 	foreach my $entry ( $data->@* ) {
@@ -718,7 +718,7 @@ sub cpan_testers :Register("show Testers result for the latest version") ( $rele
 		next unless $entry->{grade} eq 'fail';
 
 		push @records, [
-			text_red()  . 'fail' . reset(),
+			text_red()  . 'fail' . reset_all(),
 			_by_os($entry->{platform}),
 			_by_version($entry->{perl}),
 			sprintf('https://www.cpantesters.org/report/%s', $entry->{guid})
@@ -1177,7 +1177,7 @@ sub _get_labels {
 sub show_github_labels :Register("show the current GitHub labels") {
 	foreach my $label ( sort { lc($a->name) cmp lc($b->name) } _get_labels() ) {
 		my( $r, $g, $b ) = map { hex($_) } $label->color =~ m/(..)(..)(..)/;
-		say bg_rgb($r, $b, $g ), "   ", reset(), " ", $label->name, " - ", $label->description // '';
+		say bg_rgb($r, $b, $g ), "   ", reset_all(), " ", $label->name, " - ", $label->description // '';
 		}
 	}
 
@@ -1305,7 +1305,7 @@ when you do not specify a command.
 
 sub help :Register("show the help message") ( @args ) {
 	my sub colorize ( $command ) {
-		bold() . text_blue() . $_ . reset()
+		bold() . text_blue() . $_ . reset_all()
 		};
 
 	my( $longest ) = sort { length $b <=> length $a }
@@ -1929,7 +1929,7 @@ sub workflows :Register("show the last set of workflows") ( @args ) {
 		my $ex = $status eq 'completed' ? $conclusion : $status;
 		my $color = $colors{$ex} // $colors{'default'};
 
-		$ex = do { no strict 'refs'; $color->() . $ex . reset() };
+		$ex = do { no strict 'refs'; $color->() . $ex . reset_all() };
 
 		$string .= sprintf "%-12s %-12s\n", $name, $ex;
 		}
@@ -2535,7 +2535,7 @@ sub _run_command ( @command ) {
 	print command( join ' ', map { ( /\s/ ? qq("$_") : $_ ) =~ s/\n/\x{2424}/gr } @command );
 	print text_orange();
 	system { $command[0] } @command;
-	print reset();
+	print reset_all();
 	print "\n";
 	}
 
